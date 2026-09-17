@@ -26,7 +26,7 @@ export const SIGNAL_HOLD = fixture<Signal>('signal-hold.json');
 export const TRADES_CLUSTER = fixture<Trades>('trades-cluster.json');
 export const EQUITY_DRAWDOWN = fixture<Equity>('equity-drawdown.json');
 export const COVERAGE = fixture<Coverage>('coverage.json');
-export const BASE_POLICY = fixture<Policy>('../policy.base.json');
+export { BASE_POLICY } from '../src/policy/base.js';
 
 /** The bar-50 cluster all entered at this instant. */
 export const BAR_50_MS = 1781827200000;

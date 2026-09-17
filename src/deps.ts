@@ -10,8 +10,8 @@
  * Replay + memory is the reviewer's path: clone, `npm test`, reproduce every
  * receipt with no API key and no Redis.
  */
-import { readFileSync } from 'node:fs';
 import { NexusClient } from './nexus/client.js';
+import { BASE_POLICY } from './policy/base.js';
 import { TtlCache } from './nexus/fetch-all.js';
 import { MemoryStore } from './store/memory.js';
 import { RedisStore } from './store/redis.js';
@@ -20,8 +20,12 @@ import type { ReceiptStore } from './store/types.js';
 import type { Policy } from './types.js';
 import type { AppDeps } from './app.js';
 
-export function loadBasePolicy(path = 'policy.base.json'): Policy {
-  return JSON.parse(readFileSync(path, 'utf8')) as Policy;
+/**
+ * Bundled, not read from disk. A serverless function's cwd is not the repo
+ * root, and an untraced dynamic read would not ship with the deployment.
+ */
+export function loadBasePolicy(): Policy {
+  return { ...BASE_POLICY };
 }
 
 export function buildStore(env: NodeJS.ProcessEnv = process.env): {
@@ -53,7 +57,7 @@ export function buildDeps(env: NodeJS.ProcessEnv = process.env): AppDeps {
     store,
     ...(pinned ? { now: () => Number(pinned) } : {}),
     cache: new TtlCache(60_000),
-    basePolicy: loadBasePolicy(env['POLICY_PATH'] ?? 'policy.base.json'),
+    basePolicy: loadBasePolicy(),
     accountEquity: Number(env['ACCOUNT_EQUITY'] ?? 100_000),
     env,
     probe: async () => {

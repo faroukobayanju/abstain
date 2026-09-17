@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   correlatedCluster,
@@ -320,6 +321,13 @@ describe('policy', () => {
   it('is key-order independent', () => {
     const reversed = Object.fromEntries(Object.entries(STRICT).reverse()) as typeof STRICT;
     expect(policyHash(reversed)).toBe(policyHash(STRICT));
+  });
+});
+
+describe('policy.base.json artifact', () => {
+  it('is identical to the bundled module, so the two cannot drift', () => {
+    const onDisk = JSON.parse(readFileSync('policy.base.json', 'utf8'));
+    expect(onDisk).toEqual({ ...BASE_POLICY });
   });
 });
 
