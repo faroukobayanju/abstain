@@ -99,8 +99,26 @@ async function settle<T>(p: Promise<Datum<T>>): Promise<Datum<T>> {
  * assuming a publishing schedule — and record the answer in the receipt, so a
  * reviewer can re-fetch the same date and reproduce the observed values.
  */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Coverage field names are not pinned by catalog.json, which documents only
+ * "Available historical snapshot date range". Accept the plausible spellings,
+ * and if none yields a real YYYY-MM-DD, fall back to today rather than letting
+ * `undefined` propagate into get_historical_funding(as_of) — that produced a
+ * receipt with no as_of at all, which is worse than a wrong date because it is
+ * silent.
+ */
 export function resolveAsOf(coverage: Datum<Coverage>, fallbackIso: string): string {
-  return coverage.ok ? coverage.value.end : fallbackIso;
+  if (!coverage.ok) return fallbackIso;
+  const v = coverage.value as unknown as Record<string, unknown>;
+  for (const key of ['end', 'end_date', 'latest', 'to', 'max_date', 'last']) {
+    const candidate = v[key];
+    if (typeof candidate === 'string' && ISO_DATE.test(candidate.slice(0, 10))) {
+      return candidate.slice(0, 10);
+    }
+  }
+  return fallbackIso;
 }
 
 export function todayIso(now: number): string {

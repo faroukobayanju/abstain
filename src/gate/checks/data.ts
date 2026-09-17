@@ -40,11 +40,17 @@ export function dataGap(input: GateInput): CheckResult {
 
   // Coverage must actually span the date the market checks were fetched for,
   // otherwise #3 and #4 read a window Nexus never had.
+  // Only assert coverage when both bounds actually parsed. An unreadable
+  // coverage payload is reported as a gap in `missing`, not silently ignored.
   let coverageGap: string | null = null;
   if (d.coverage.ok) {
     const { start, end } = d.coverage.value;
-    if (!dateWithin(input.asOf, start, end)) {
-      coverageGap = `as_of=${input.asOf} outside coverage ${start}..${end}`;
+    if (typeof start === 'string' && typeof end === 'string') {
+      if (!dateWithin(input.asOf, start, end)) {
+        coverageGap = `as_of=${input.asOf} outside coverage ${start}..${end}`;
+      }
+    } else {
+      coverageGap = 'coverage payload has no readable start/end bounds';
     }
   }
 

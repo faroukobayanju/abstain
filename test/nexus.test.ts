@@ -191,6 +191,25 @@ describe('as_of resolution — the thing that would have made EXECUTE unreachabl
     expect(resolveAsOf(failed('NexusTimeoutError'), '2026-09-18')).toBe('2026-09-18');
   });
 
+  it('accepts the plausible field spellings, since catalog.json pins none', () => {
+    for (const k of ['end', 'end_date', 'latest', 'to', 'max_date', 'last']) {
+      expect(resolveAsOf(present({ [k]: '2026-09-16' } as Coverage), '2026-09-18')).toBe('2026-09-16');
+    }
+  });
+
+  it('trims a datetime down to a date', () => {
+    expect(resolveAsOf(present({ end: '2026-09-16T00:00:00Z' } as Coverage), '2026-09-18')).toBe('2026-09-16');
+  });
+
+  // The live bug: an unrecognised shape yielded `undefined`, which flowed into
+  // get_historical_funding(as_of) and produced a receipt with no as_of at all.
+  it('NEVER returns undefined for an unrecognised coverage shape', () => {
+    const weird = present({ coverage: { first: 'x' } } as unknown as Coverage);
+    const got = resolveAsOf(weird, '2026-09-18');
+    expect(got).toBe('2026-09-18');
+    expect(got).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   it('formats today as a UTC ISO date', () => {
     expect(todayIso(Date.UTC(2026, 8, 18, 23, 59))).toBe('2026-09-18');
   });

@@ -148,11 +148,18 @@ export interface OpenInterest {
   long_short_ratio?: number;
 }
 
+/**
+ * catalog.json documents only "Available historical snapshot date range" and
+ * does not pin the field names, so every field is optional and resolveAsOf()
+ * probes the plausible spellings.
+ */
 export interface Coverage {
-  /** YYYY-MM-DD */
-  start: string;
-  /** YYYY-MM-DD */
-  end: string;
+  start?: string;
+  end?: string;
+  end_date?: string;
+  latest?: string;
+  to?: string;
+  [key: string]: unknown;
 }
 
 // ---------------------------------------------------------------------------
