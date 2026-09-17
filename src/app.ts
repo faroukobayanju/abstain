@@ -18,7 +18,7 @@
  * it never places an order and never holds custody.
  */
 import { Hono } from 'hono';
-import { PROJECT_SLUG, commitSha, isReviewableCommit, safeEqual, writeKey } from './config.js';
+import { PROJECT_SLUG, SCHEMA_VERSION, commitSha, isReviewableCommit, safeEqual, writeKey } from './config.js';
 import { ValidationError, evaluate, validate, type EvaluateDeps } from './evaluate.js';
 import { mergePolicy, policyHash, type PolicyName } from './policy/index.js';
 import { verifyChain } from './receipt/verify.js';
@@ -43,6 +43,7 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
   app.get('/health', (c) => {
     const commit = commitSha(env);
+    c.header('x-source-commit', commit);
     return c.json({
       status: 'ok',
       service: PROJECT_SLUG,
@@ -51,9 +52,16 @@ export function createApp(deps: AppDeps) {
     });
   });
 
+  // Shape is fixed by the automated online gate: schemaVersion, the DIRECTORY
+  // slug, and the same commit /health reports.
   app.get('/.well-known/xagent-verification.json', (c) => {
     const commit = commitSha(env);
-    return c.json({ slug: PROJECT_SLUG, commit, commit_reviewable: isReviewableCommit(commit) });
+    return c.json({
+      schemaVersion: SCHEMA_VERSION,
+      slug: PROJECT_SLUG,
+      commit,
+      commit_reviewable: isReviewableCommit(commit),
+    });
   });
 
   // Dependency health lives here instead, where no gate reads it.

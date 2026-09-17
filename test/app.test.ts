@@ -41,10 +41,12 @@ describe('hard gate: GET /health', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: 'ok',
-      service: 'abstain',
+      service: 'zorak-abstain',
       commit: COMMIT,
       commit_reviewable: true,
     });
+    // The gate accepts the commit in the body or this header; supply both.
+    expect(res.headers.get('x-source-commit')).toBe(COMMIT);
   });
 
   it('stays ok with NO Nexus key and a completely broken store', async () => {
@@ -69,11 +71,13 @@ describe('hard gate: GET /health', () => {
 });
 
 describe('hard gate: GET /.well-known/xagent-verification.json', () => {
-  it('reports the project slug and the same commit as /health', async () => {
+  it('matches the shape the automated online gate requires', async () => {
     const a = app();
     const wk = await (await a.request('/.well-known/xagent-verification.json')).json();
     const health = await (await a.request('/health')).json();
-    expect(wk.slug).toBe('abstain');
+    expect(wk.schemaVersion).toBe(1);
+    // MUST equal the submission directory name, not the bare project name.
+    expect(wk.slug).toBe('zorak-abstain');
     expect(wk.commit).toBe(health.commit);
   });
 });

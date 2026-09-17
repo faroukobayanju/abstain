@@ -7,7 +7,11 @@
  * Both must report the EXACT 40-character commit that the reviewed source
  * corresponds to. Vercel sets VERCEL_GIT_COMMIT_SHA on git-connected deploys.
  */
-export const PROJECT_SLUG = 'abstain';
+/** MUST match the submission directory name: submissions/mcp-hackathon/<slug>/ */
+export const PROJECT_SLUG = 'zorak-abstain';
+
+/** Required by the automated online gate. */
+export const SCHEMA_VERSION = 1;
 
 export function commitSha(env: NodeJS.ProcessEnv = process.env): string {
   return env['VERCEL_GIT_COMMIT_SHA'] ?? env['COMMIT_SHA'] ?? 'unknown';

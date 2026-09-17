@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "Abstain",
+  "slug": "zorak-abstain",
+  "sourceRepository": "https://github.com/REPLACE_ME/abstain",
+  "reviewCommit": "REPLACE_WITH_40_CHAR_SHA",
+  "apiBaseUrl": "https://REPLACE_ME.vercel.app/v1",
+  "healthCheckUrl": "https://REPLACE_ME.vercel.app/health",
+  "deploymentProofUrl": "https://REPLACE_ME.vercel.app/.well-known/xagent-verification.json"
+}
