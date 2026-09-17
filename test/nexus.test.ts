@@ -1,0 +1,268 @@
+import { describe, expect, it } from 'vitest';
+import { NexusClient, cassetteName, unwrap } from '../src/nexus/client.js';
+import { KNOWN_TOOLS, classify } from '../src/nexus/errors.js';
+import { TtlCache, fetchAll, resolveAsOf, todayIso } from '../src/nexus/fetch-all.js';
+import { absent, failed, present, type Coverage, type Metrics } from '../src/types.js';
+
+const noSleep = async () => {};
+
+function respond(status: number, body: unknown, ok = status < 400): Response {
+  return {
+    ok,
+    status,
+    json: async () => body,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+  } as unknown as Response;
+}
+
+function clientWith(fetchImpl: typeof fetch) {
+  return new NexusClient({ mode: 'live', apiKey: 'nxk_test', fetchImpl, sleep: noSleep });
+}
+
+describe('envelope unwrapping', () => {
+  it('unwraps the gateway wrapper exactly once', () => {
+    const wrapped = { ok: true, name: 'get_strategy_metrics', strategy_id: 'str_x', content: { sharpe_ratio: 0.2989 } };
+    expect(unwrap<Metrics>(wrapped, 'get_strategy_metrics')).toEqual({ sharpe_ratio: 0.2989 });
+  });
+
+  it('accepts a bare payload so hand-written cassettes need no wrapper', () => {
+    expect(unwrap<{ a: number }>({ a: 1 }, 't')).toEqual({ a: 1 });
+  });
+
+  it('rejects ok:false rather than handing back junk', () => {
+    expect(() => unwrap({ ok: false, content: {} }, 't')).toThrow('ok:false');
+  });
+});
+
+describe('error classification — fail closed, never throw at the call site', () => {
+  it('401 becomes a failure and is not retried', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      return respond(401, { error: 'unauthorized' });
+    });
+    expect(await c.call('get_strategy_metrics')).toEqual(failed('NexusAuthError'));
+    expect(calls).toBe(1);
+  });
+
+  it('400 becomes a failure and is not retried', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      return respond(400, 'missing symbol');
+    });
+    expect(await c.call('get_strategy_signal')).toEqual(failed('NexusBadRequestError'));
+    expect(calls).toBe(1);
+  });
+
+  it('404 on a KNOWN tool is an ABSENCE, not a failure', async () => {
+    const c = clientWith(async () => respond(404, { detail: 'Not Found' }));
+    expect(await c.call('get_strategy_metrics')).toEqual(absent());
+  });
+
+  it('404 on an UNKNOWN tool is a failure — our bug, not a data gap', async () => {
+    const c = clientWith(async () => respond(404, { detail: 'Not Found' }));
+    expect(await c.call('get_stratgy_metrics')).toEqual(failed('NexusUnknownToolError'));
+  });
+
+  it('429 retries once, then fails', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      return respond(429, 'slow down');
+    });
+    expect(await c.call('run_backtest')).toEqual(failed('NexusRateLimitError'));
+    expect(calls).toBe(2);
+  });
+
+  it('502 retries once, then fails', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      return respond(502, 'bad gateway');
+    });
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusUpstreamError'));
+    expect(calls).toBe(2);
+  });
+
+  it('a network error retries twice, then fails', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      throw new Error('ECONNRESET');
+    });
+    expect(await c.call('get_strategy_trades')).toEqual(failed('NexusTimeoutError'));
+    expect(calls).toBe(3);
+  });
+
+  it('recovers when a retry succeeds', async () => {
+    let calls = 0;
+    const c = clientWith(async () => {
+      calls++;
+      return calls === 1 ? respond(502, 'x') : respond(200, { ok: true, content: { sharpe_ratio: 1 } });
+    });
+    expect(await c.call<Metrics>('get_strategy_metrics')).toEqual(present({ sharpe_ratio: 1 }));
+  });
+
+  it('a non-JSON body is a parse failure, not a silent empty result', async () => {
+    const c = clientWith(async () =>
+      ({ ok: true, status: 200, json: async () => { throw new Error('bad'); }, text: async () => '' }) as unknown as Response,
+    );
+    expect(await c.call('get_strategy_metrics')).toEqual(failed('NexusParseError'));
+  });
+
+  it('classifies every documented status', () => {
+    expect(classify(401, 'get_strategy_metrics', '').name).toBe('NexusAuthError');
+    expect(classify(400, 'get_strategy_signal', '').name).toBe('NexusBadRequestError');
+    expect(classify(404, 'get_strategy_metrics', '').name).toBe('NexusNotPublishedError');
+    expect(classify(404, 'nope', '').name).toBe('NexusUnknownToolError');
+    expect(classify(429, 'run_backtest', '').name).toBe('NexusRateLimitError');
+    expect(classify(503, 'get_macro', '').name).toBe('NexusUpstreamError');
+  });
+
+  it('knows all 18 tools the gateway serves', () => {
+    expect(KNOWN_TOOLS.size).toBe(18);
+    expect(KNOWN_TOOLS.has('get_historical_coverage')).toBe(true);
+  });
+});
+
+describe('cassette replay — how a reviewer with no key reproduces receipts', () => {
+  it('names cassettes by tool, symbol and as_of', () => {
+    expect(cassetteName('get_strategy_metrics', {})).toBe('get_strategy_metrics.json');
+    expect(cassetteName('get_strategy_signal', { symbol: 'BTC/USDT' })).toBe('get_strategy_signal.BTC-USDT.json');
+    expect(cassetteName('get_historical_funding', { symbol: 'BTC/USDT', as_of: '2026-09-17' })).toBe(
+      'get_historical_funding.BTC-USDT.2026-09-17.json',
+    );
+  });
+
+  it('serves the recorded metrics with no network and no API key', async () => {
+    const c = new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' });
+    const got = await c.call<Metrics>('get_strategy_metrics');
+    expect(got.ok).toBe(true);
+    if (got.ok) {
+      expect(got.value.sharpe_ratio).toBe(0.2989);
+      expect(got.value.status).toBe('NOT_QUALIFIED');
+    }
+  });
+
+  it('treats a missing cassette as absent, so DATA_GAP carries the refusal', async () => {
+    const c = new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' });
+    expect(await c.call('get_fear_greed')).toEqual(absent());
+  });
+});
+
+describe('TtlCache', () => {
+  it('serves a hit inside the window', () => {
+    let t = 0;
+    const cache = new TtlCache(60_000, () => t);
+    cache.set('k', present(1));
+    t = 59_000;
+    expect(cache.get('k')).toEqual(present(1));
+  });
+
+  it('expires past the window', () => {
+    let t = 0;
+    const cache = new TtlCache(60_000, () => t);
+    cache.set('k', present(1));
+    t = 61_000;
+    expect(cache.get('k')).toBeUndefined();
+  });
+
+  it('never caches a failure — a transient 502 must not pin a refusal', () => {
+    const cache = new TtlCache(60_000);
+    cache.set('k', failed('NexusUpstreamError'));
+    expect(cache.get('k')).toBeUndefined();
+  });
+
+  it('does cache an absence, which is a real and stable fact', () => {
+    const cache = new TtlCache(60_000);
+    cache.set('k', absent());
+    expect(cache.get('k')).toEqual(absent());
+  });
+});
+
+describe('as_of resolution — the thing that would have made EXECUTE unreachable', () => {
+  it('uses the last date Nexus actually has', () => {
+    const coverage = present<Coverage>({ start: '2025-01-01', end: '2026-09-16' });
+    expect(resolveAsOf(coverage, '2026-09-18')).toBe('2026-09-16');
+  });
+
+  it('falls back to today when coverage is unavailable — DATA_GAP still refuses', () => {
+    expect(resolveAsOf(failed('NexusTimeoutError'), '2026-09-18')).toBe('2026-09-18');
+  });
+
+  it('formats today as a UTC ISO date', () => {
+    expect(todayIso(Date.UTC(2026, 8, 18, 23, 59))).toBe('2026-09-18');
+  });
+});
+
+describe('fetchAll', () => {
+  it('issues the six data calls in parallel after resolving coverage', async () => {
+    const started: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const c = new NexusClient({
+      mode: 'live',
+      apiKey: 'nxk_test',
+      sleep: noSleep,
+      fetchImpl: async (_url, init) => {
+        const name = JSON.parse(String((init as RequestInit).body)).name as string;
+        started.push(name);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setImmediate(r));
+        inFlight--;
+        const payload =
+          name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        return respond(200, { ok: true, content: payload });
+      },
+    });
+
+    const res = await fetchAll(c, 'BTC/USDT', Date.UTC(2026, 8, 18), new TtlCache(60_000));
+    expect(res.asOf).toBe('2026-09-16');
+    expect(started[0]).toBe('get_historical_coverage');
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(started).toHaveLength(7);
+  });
+
+  it('one failing call does not prevent the other six from returning', async () => {
+    const c = new NexusClient({
+      mode: 'live',
+      apiKey: 'nxk_test',
+      sleep: noSleep,
+      fetchImpl: async (_url, init) => {
+        const name = JSON.parse(String((init as RequestInit).body)).name as string;
+        if (name === 'get_open_interest') return respond(502, 'down');
+        const payload =
+          name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        return respond(200, { ok: true, content: payload });
+      },
+    });
+
+    const { data } = await fetchAll(c, 'BTC/USDT', Date.UTC(2026, 8, 18), new TtlCache(60_000));
+    expect(data.openInterest).toEqual(failed('NexusUpstreamError'));
+    expect(data.signal.ok).toBe(true);
+    expect(data.metrics.ok).toBe(true);
+    expect(data.funding.ok).toBe(true);
+  });
+
+  it('passes the resolved as_of to the two point-in-time calls', async () => {
+    const seen: Record<string, unknown> = {};
+    const c = new NexusClient({
+      mode: 'live',
+      apiKey: 'nxk_test',
+      sleep: noSleep,
+      fetchImpl: async (_url, init) => {
+        const parsed = JSON.parse(String((init as RequestInit).body)) as { name: string; arguments: Record<string, unknown> };
+        seen[parsed.name] = parsed.arguments;
+        const payload =
+          parsed.name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        return respond(200, { ok: true, content: payload });
+      },
+    });
+
+    await fetchAll(c, 'ETH/USDT', Date.UTC(2026, 8, 18), new TtlCache(60_000));
+    expect(seen['get_historical_funding']).toEqual({ as_of: '2026-09-16', symbol: 'ETH/USDT' });
+    expect(seen['get_open_interest']).toEqual({ as_of: '2026-09-16', symbol: 'ETH/USDT' });
+  });
+});
