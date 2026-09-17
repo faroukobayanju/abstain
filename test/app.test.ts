@@ -41,7 +41,7 @@ describe('hard gate: GET /health', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: 'ok',
-      service: 'zorak-abstain',
+      service: 'faroukobayanju-abstain',
       commit: COMMIT,
       commit_reviewable: true,
     });
@@ -77,7 +77,7 @@ describe('hard gate: GET /.well-known/xagent-verification.json', () => {
     const health = await (await a.request('/health')).json();
     expect(wk.schemaVersion).toBe(1);
     // MUST equal the submission directory name, not the bare project name.
-    expect(wk.slug).toBe('zorak-abstain');
+    expect(wk.slug).toBe('faroukobayanju-abstain');
     expect(wk.commit).toBe(health.commit);
   });
 });

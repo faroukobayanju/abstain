@@ -2,7 +2,7 @@
 
 This directory is the submission package. It is NOT yet in the right place:
 the PR must add exactly one directory to a fork of `xagentAI/xagt-plugin` at
-`submissions/mcp-hackathon/zorak-abstain/`.
+`submissions/mcp-hackathon/faroukobayanju-abstain/`.
 
 ## Order matters — doing this backwards means redoing it
 
@@ -44,20 +44,20 @@ verification/README.md.
 ## 4. Assemble into a fork and validate offline
 
     gh repo fork xagentAI/xagt-plugin --clone --remote=false
-    cd xagt-plugin && git checkout -b zorak-abstain
-    mkdir -p submissions/mcp-hackathon/zorak-abstain
+    cd xagt-plugin && git checkout -b faroukobayanju-abstain
+    mkdir -p submissions/mcp-hackathon/faroukobayanju-abstain
     cp -R <this-repo>/submission/{SUBMISSION.md,submission.json,RIGHTS.md,verification} \
-          submissions/mcp-hackathon/zorak-abstain/
-    rm submissions/mcp-hackathon/zorak-abstain/PACKAGE.md 2>/dev/null
+          submissions/mcp-hackathon/faroukobayanju-abstain/
+    rm submissions/mcp-hackathon/faroukobayanju-abstain/PACKAGE.md 2>/dev/null
 
     # Vendor the complete source, excluding build output and deps.
-    mkdir -p submissions/mcp-hackathon/zorak-abstain/source
+    mkdir -p submissions/mcp-hackathon/faroukobayanju-abstain/source
     cd <this-repo> && git archive HEAD | \
-      tar -x -C <fork>/submissions/mcp-hackathon/zorak-abstain/source
+      tar -x -C <fork>/submissions/mcp-hackathon/faroukobayanju-abstain/source
 
     # Offline preflight provided by the submission repo:
     cd <fork> && npm run validate:submission -- \
-      --dir submissions/mcp-hackathon/zorak-abstain
+      --dir submissions/mcp-hackathon/faroukobayanju-abstain
 
 ## 5. Last check before opening the PR
 

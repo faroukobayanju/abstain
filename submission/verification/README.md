@@ -17,7 +17,7 @@ curl --fail --silent --show-error https://REPLACE_ME.vercel.app/health
 Expected response:
 
 ```json
-{"status":"ok","service":"zorak-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
+{"status":"ok","service":"faroukobayanju-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
 ```
 
 The same commit is also returned in the `x-source-commit` response header.
@@ -33,7 +33,7 @@ curl --fail --silent --show-error https://REPLACE_ME.vercel.app/.well-known/xage
 ```
 
 ```json
-{"schemaVersion":1,"slug":"zorak-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
+{"schemaVersion":1,"slug":"faroukobayanju-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
 ```
 
 ## 3. Capability call — a refusal with its reason

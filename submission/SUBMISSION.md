@@ -63,7 +63,7 @@ limits, and the limits are the evidence.
 
 ## Source and reproducibility
 
-- **Source repository:** `https://github.com/REPLACE_ME/abstain`
+- **Source repository:** `https://github.com/faroukobayanju/abstain`
 - **Review commit:** `REPLACE_WITH_40_CHAR_SHA`
 - **Source submitted in this PR:** `source/`
 - **Run tests:** `npm ci && npm test` — 127 tests, no API key and no network required
@@ -73,12 +73,12 @@ limits, and the limits are the evidence.
 
 ```json
 // GET /health
-{"status":"ok","service":"zorak-abstain","commit":"<40-character commit SHA>","commit_reviewable":true}
+{"status":"ok","service":"faroukobayanju-abstain","commit":"<40-character commit SHA>","commit_reviewable":true}
 ```
 
 ```json
 // GET /.well-known/xagent-verification.json
-{"schemaVersion":1,"slug":"zorak-abstain","commit":"<40-character commit SHA>","commit_reviewable":true}
+{"schemaVersion":1,"slug":"faroukobayanju-abstain","commit":"<40-character commit SHA>","commit_reviewable":true}
 ```
 
 ## Verification
@@ -166,5 +166,5 @@ ships as committed, the frontier ships beside it, and `GET /v1/policy` plus
 
 ## Support
 
-- **Team / builder:** zorak
+- **Team / builder:** faroukobayanju
 - **Contact:** `REPLACE_WITH_CONTACT`

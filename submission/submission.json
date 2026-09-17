@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "name": "Abstain",
-  "slug": "zorak-abstain",
-  "sourceRepository": "https://github.com/REPLACE_ME/abstain",
+  "slug": "faroukobayanju-abstain",
+  "sourceRepository": "https://github.com/faroukobayanju/abstain",
   "reviewCommit": "REPLACE_WITH_40_CHAR_SHA",
   "apiBaseUrl": "https://REPLACE_ME.vercel.app/v1",
   "healthCheckUrl": "https://REPLACE_ME.vercel.app/health",

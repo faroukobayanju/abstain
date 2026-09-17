@@ -1,8 +1,8 @@
 # Submission rights declaration
 
 Project: `Abstain`
-Submission slug: `zorak-abstain`
-Submitter: `zorak`
+Submission slug: `faroukobayanju-abstain`
+Submitter: `faroukobayanju`
 Date: `2026-09-18`
 
 The submitter confirms that they own, or have sufficient authorization for, the source code, dependencies, service, data, branding, and other materials submitted in this pull request.

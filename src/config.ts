@@ -8,7 +8,7 @@
  * corresponds to. Vercel sets VERCEL_GIT_COMMIT_SHA on git-connected deploys.
  */
 /** MUST match the submission directory name: submissions/mcp-hackathon/<slug>/ */
-export const PROJECT_SLUG = 'zorak-abstain';
+export const PROJECT_SLUG = 'faroukobayanju-abstain';
 
 /** Required by the automated online gate. */
 export const SCHEMA_VERSION = 1;
