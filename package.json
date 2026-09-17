@@ -7,7 +7,9 @@
     "start": "node dist/src/server.js",
     "dev": "npm run build && npm start",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "chart": "npm run build && node dist/src/chart/build.js",
+    "record": "npm run build && node dist/src/chart/record.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
