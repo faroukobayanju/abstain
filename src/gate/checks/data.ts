@@ -56,7 +56,16 @@ export function dataGap(input: GateInput, policy: Policy): CheckResult {
   // coverage payload is reported as a gap in `missing`, not silently ignored.
   let coverageGap: string | null = null;
   if (d.coverage.ok) {
-    const { start, end } = d.coverage.value;
+    const cov = d.coverage.value as Record<string, unknown>;
+    const pick = (keys: string[]): string | undefined => {
+      for (const k of keys) {
+        const v = cov[k];
+        if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+      }
+      return undefined;
+    };
+    const start = pick(['first', 'start', 'from', 'min_date']);
+    const end = pick(['last', 'end', 'end_date', 'latest', 'to', 'max_date']);
     if (typeof start === 'string' && typeof end === 'string') {
       if (!dateWithin(input.asOf, start, end)) {
         coverageGap = `as_of=${input.asOf} outside coverage ${start}..${end}`;

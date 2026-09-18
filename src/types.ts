@@ -155,6 +155,9 @@ export interface OpenInterest {
  * probes the plausible spellings.
  */
 export interface Coverage {
+  /** Observed live shape: {first, last}. */
+  first?: string;
+  last?: string;
   start?: string;
   end?: string;
   end_date?: string;

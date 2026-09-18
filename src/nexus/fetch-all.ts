@@ -112,7 +112,9 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export function resolveAsOf(coverage: Datum<Coverage>, fallbackIso: string): string {
   if (!coverage.ok) return fallbackIso;
   const v = coverage.value as unknown as Record<string, unknown>;
-  for (const key of ['end', 'end_date', 'latest', 'to', 'max_date', 'last']) {
+  // The live gateway uses {first, last}. Guessing spellings was the bug;
+  // these are now ordered with the observed one first.
+  for (const key of ['last', 'end', 'end_date', 'latest', 'to', 'max_date']) {
     const candidate = v[key];
     if (typeof candidate === 'string' && ISO_DATE.test(candidate.slice(0, 10))) {
       return candidate.slice(0, 10);

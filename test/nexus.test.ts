@@ -501,3 +501,15 @@ describe('payload validation must accept what the gateway actually sends', () =>
     expect(usable + nulled).toBe(files.length);
   });
 });
+
+describe('coverage field names — guessed wrong once already', () => {
+  it('reads the live {first, last} shape', () => {
+    expect(resolveAsOf(present({ first: '2021-01-01', last: '2026-09-18' } as Coverage), '2026-09-30'))
+      .toBe('2026-09-18');
+  });
+
+  it('still reads the {start, end} shape', () => {
+    expect(resolveAsOf(present({ start: '2025-01-01', end: '2026-09-16' } as Coverage), '2026-09-30'))
+      .toBe('2026-09-16');
+  });
+});
