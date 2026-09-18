@@ -42,7 +42,7 @@ Replay mode is the default. It uses committed Nexus fixtures and an in-memory re
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run the 147-test offline suite. |
+| `npm test` | Run the 156-test offline suite. |
 | `npm run typecheck` | Type-check without emitting JavaScript. |
 | `npm run build` | Compile production JavaScript into `dist/`. |
 | `npm run dev` | Build and start the local server on port 3000. |

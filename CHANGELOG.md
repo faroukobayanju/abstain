@@ -20,4 +20,3 @@ All notable changes to Abstain are documented here.
 
 - Prevent concurrent evaluators from committing stale duplicate-check decisions.
 - Prevent malformed or unresolved Nexus evidence from reaching a receipt.
-
