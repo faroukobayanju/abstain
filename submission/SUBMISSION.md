@@ -5,7 +5,7 @@ every refusal, becomes a hash-chained receipt that a stranger can replay.
 
 ## Capability
 
-- **One-line description:** An agent submits a proposed trade against a Nexus strategy signal; Abstain runs ten deterministic pre-trade checks and returns `EXECUTE`, `ABSTAIN`, or `NO_TRADE` with a hash-chained receipt naming every check, its observed value, and its threshold.
+- **One-line description:** An agent submits a proposed trade against a Nexus strategy signal; Abstain runs eleven deterministic pre-trade checks and returns `EXECUTE`, `ABSTAIN`, or `NO_TRADE` with a hash-chained receipt naming every check, its observed value, and its threshold.
 - **Who it helps:** Any agent or desk that can place orders from a strategy signal but cannot currently prove *why* a given order was allowed, what conditions would have stopped it, or that the track record it advertises was not assembled after the fact.
 - **Capability boundary:** Abstain **authorizes and refuses**. It never places an order, never holds custody, never moves funds, and never signs a transaction. It reads a Nexus strategy's published record and public market series, applies a versioned policy, and writes an append-only receipt. It is pre-trade execution control and settlement evidence for a trading strategy — not wallet risk scoring, not security monitoring, not compliance analysis.
 
@@ -43,7 +43,7 @@ Nexus's, so Abstain refuses and records evidence before Nexus silently halts.
 | GET | `/v1/policy?policy=strict\|permissive` | none | active thresholds + policy hash |
 | GET | `/v1/ready` | none | dependency probe (no gate reads this) |
 
-### The ten checks
+### The eleven checks
 
 | # | Check | Refuses when | Source |
 | --- | --- | --- | --- |
@@ -58,17 +58,17 @@ Nexus's, so Abstain refuses and records evidence before Nexus silently halts.
 | 9 | `SIZE_BOUND` | notional outside `[min_notional, max_notional]` | request |
 | 10 | `DUPLICATE` | `signal_id` already committed to the chain | receipt chain |
 
-For a BUY or SELL proposal, all ten run on every evaluation. A HOLD signal returns
+For a BUY or SELL proposal, all eleven run on every evaluation. A HOLD signal returns
 `NO_TRADE` before gating because there is no proposed execution; that outcome is still
 written to the receipt chain. A receipt that stops at the first failed check would hide
-the remaining limits, so non-HOLD evaluations always record all ten.
+the remaining limits, so every evaluation records all eleven.
 
 ## Source and reproducibility
 
 - **Source repository:** `https://github.com/faroukobayanju/abstain`
 - **Review commit:** `REPLACE_WITH_40_CHAR_SHA`
 - **Source submitted in this PR:** `source/`
-- **Run tests:** `npm ci && npm test` — 162 tests, no API key and no network required
+- **Run tests:** `npm ci && npm test` — 168 tests, no API key and no network required
 - **Run locally:** `npm run build && COMMIT_SHA=$(git rev-parse HEAD) ABSTAIN_WRITE_KEY=demo-key npm start`
 - **Deploy:** Vercel git integration; `vercel.json` rewrites all paths to `api/index.ts`. Set `ABSTAIN_WRITE_KEY`, `NEXUS_API_KEY` + `NEXUS_MODE=live`, and either `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` or Vercel's `KV_REST_API_URL` + `KV_REST_API_TOKEN`. Production evaluations refuse to run without durable storage.
 - **Version binding:** `/health` reports `VERCEL_GIT_COMMIT_SHA` in the body and in the `x-source-commit` response header. It has **zero external dependencies** by design: coupling a hard gate to Nexus or Redis uptime would let a third party fail a gate already passed.

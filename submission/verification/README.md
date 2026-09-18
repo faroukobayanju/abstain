@@ -62,7 +62,7 @@ Current success response (abridged):
 
 The live strategy currently emits `trade_intent: HOLD`, so nothing was proposed,
 authorized, or refused. A receipt is still written, so the chain has no gaps. When the
-signal is BUY or SELL, the response contains all ten checks; the deterministic offline
+signal is BUY or SELL, the response contains all eleven checks; the deterministic offline
 suite exercises those non-HOLD paths without depending on the live signal's timing.
 
 ## 4. The closer — recompute the chain yourself
@@ -101,7 +101,7 @@ keys recursively and preserves array order (`source/src/receipt/schema.ts`).
 cd source && npm ci && npm test
 ```
 
-Expected: **162 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
+Expected: **168 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
 the suite serves the recorded cassettes in `fixtures/` instead of calling Nexus.
 
 The tests that carry the most weight:

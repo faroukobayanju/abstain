@@ -91,9 +91,21 @@ export function duplicate(input: GateInput): CheckResult {
  *   signal HOLD + any proposal   ⇒ FAIL  (no directional signal backs it)
  *   signal unavailable           ⇒ SKIPPED (DATA_GAP carries the refusal)
  */
-export function signalSupport(input: GateInput): CheckResult {
+export function signalSupport(input: GateInput, policy: Policy): CheckResult {
   const { signal } = input.data;
   const side = input.proposal.side;
+
+  if (!policy.require_signal_support) {
+    return {
+      id: 'SIGNAL_SUPPORT',
+      verdict: 'SKIPPED',
+      observed: signal.ok ? signal.value.trade_intent : null,
+      threshold: side,
+      unit: null,
+      source: null,
+      reason: 'require_signal_support is false in this policy',
+    };
+  }
 
   if (!signal.ok) {
     return {

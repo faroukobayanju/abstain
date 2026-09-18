@@ -155,14 +155,12 @@ describe('error classification — fail closed, never throw at the call site', (
     })).toEqual(failed('NexusParseError'));
   });
 
-  it('rejects open interest without the prior snapshot needed by OI_SHOCK', async () => {
+  it('accepts open interest with no prior snapshot — the live gateway never sends one', async () => {
     const payload = validPayload('get_open_interest');
     delete payload['open_interest_prev'];
     const c = clientWith(async () => respond(200, { ok: true, content: payload }));
-    expect(await c.call('get_open_interest', {
-      symbol: 'BTC/USDT',
-      as_of: '2026-09-16',
-    })).toEqual(failed('NexusParseError'));
+    const r = await c.call('get_open_interest', { symbol: 'BTC/USDT', as_of: '2026-09-16' });
+    expect(r.ok).toBe(true);
   });
 
   it('rejects an empty equity series instead of treating missing evidence as usable', async () => {
@@ -443,5 +441,63 @@ describe('fetchAll', () => {
       { as_of: '2026-09-16', symbol: 'ETH/USDT' },
       { as_of: '2026-09-15', symbol: 'ETH/USDT' },
     ]);
+  });
+});
+
+describe('payload validation must accept what the gateway actually sends', () => {
+  const liveOiShape = {
+    symbol: 'ETH/USDT',
+    as_of_date: '2026-06-19',
+    price: 1710.31,
+    open_interest: 2321976.899,
+    open_interest_usd: 4168370053.5,
+    long_short_ratio: 1.52186879,
+    funding_rate: -2.7e-7,
+  };
+
+  // Requiring open_interest_prev rejected every live payload as a parse error,
+  // which failed DATA_GAP and abstained on everything. It was invisible only
+  // because a HOLD signal used to bypass the gate entirely.
+  it('accepts a live get_open_interest payload with no open_interest_prev', async () => {
+    const c = clientWith(async () => respond(200, { ok: true, content: liveOiShape }));
+    const r = await c.call('get_open_interest', { symbol: 'ETH/USDT', as_of: '2026-06-19' });
+    expect(r.ok).toBe(true);
+  });
+
+  it('still rejects a non-positive baseline when the gateway does send one', async () => {
+    const c = clientWith(async () =>
+      respond(200, { ok: true, content: { ...liveOiShape, open_interest_prev: 0 } }),
+    );
+    expect(await c.call('get_open_interest', { symbol: 'ETH/USDT', as_of: '2026-06-19' })).toEqual(
+      failed('NexusParseError'),
+    );
+  });
+
+  // Nexus returns null open_interest for some (symbol, date) pairs. A usable
+  // payload must validate; a null one must fail closed rather than be treated
+  // as a real reading of zero.
+  it('accepts every recorded OI cassette that carries a usable reading', async () => {
+    const c = new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' });
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const files = readdirSync('fixtures').filter((f) => f.startsWith('get_open_interest.'));
+    expect(files.length).toBeGreaterThan(10);
+
+    let usable = 0;
+    let nulled = 0;
+    for (const f of files) {
+      const [, sym, date] = f.replace('.json', '').split('.');
+      const content = JSON.parse(readFileSync(`fixtures/${f}`, 'utf8')).content as Record<string, unknown>;
+      const r = await c.call('get_open_interest', { symbol: sym!.replace('-', '/'), as_of: date! });
+      if (content['open_interest'] === null) {
+        expect(r.ok, `${f} has a null reading and must fail closed`).toBe(false);
+        nulled++;
+      } else {
+        expect(r.ok, `${f} is usable and must validate`).toBe(true);
+        usable++;
+      }
+    }
+    expect(usable).toBeGreaterThan(0);
+    // Documents the gateway behaviour rather than pretending it does not happen.
+    expect(usable + nulled).toBe(files.length);
   });
 });

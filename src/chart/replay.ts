@@ -81,10 +81,14 @@ export interface ReplayInputs {
  * SIGNAL_STALE fail on every decision after the first — an artefact of the
  * harness, not a judgement about the strategy.
  */
-function signalAt(symbol: string, entryTsMs: number): GateData['signal'] {
+function signalAt(symbol: string, entryTsMs: number, direction: number): GateData['signal'] {
   return present({
     symbol,
-    trade_intent: 'BUY' as const,
+    // The recorded trade IS both the signal and the proposal here, so the
+    // intent must follow the trade's direction. Hardcoding BUY made every
+    // recorded short fail SIGNAL_SUPPORT — an artefact of the harness, not a
+    // judgement about the strategy.
+    trade_intent: direction === 1 ? ('BUY' as const) : ('SELL' as const),
     reasoning_log: 'replay: the recorded trade is the proposal',
     timestamp: Math.floor(entryTsMs / 1000),
   });
@@ -120,7 +124,7 @@ export function replay(inputs: ReplayInputs): ReplayResult {
         signalId: `replay_${trade.symbol}_${now}`,
       },
       data: {
-        signal: signalAt(trade.symbol, now),
+        signal: signalAt(trade.symbol, now, trade.direction),
         metrics: inputs.staticData.metrics,
         coverage: inputs.staticData.coverage,
         equity: present({ run_id: inputs.equity.run_id, points: knownEquity }),

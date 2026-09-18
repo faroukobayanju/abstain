@@ -10,7 +10,8 @@
  * `absent` and `failed` stay distinct in the receipt: "Nexus has no OI snapshot
  * for this date" and "the OI call timed out" are different facts.
  */
-import type { CheckResult, Datum, GateInput } from '../../types.js';
+import type {
+  Policy, CheckResult, Datum, GateInput } from '../../types.js';
 import { dateWithin } from '../../util/parse.js';
 
 interface Required {
@@ -19,8 +20,19 @@ interface Required {
   datum: Datum<unknown>;
 }
 
-export function dataGap(input: GateInput): CheckResult {
+export function dataGap(input: GateInput, policy: Policy): CheckResult {
   const d = input.data;
+  if (!policy.require_data_complete) {
+    return {
+      id: 'DATA_GAP',
+      verdict: 'SKIPPED',
+      observed: null,
+      threshold: 0,
+      unit: 'gaps',
+      source: null,
+      reason: 'require_data_complete is false in this policy',
+    };
+  }
   const required: Required[] = [
     { name: 'signal', call: 'get_strategy_signal', datum: d.signal },
     { name: 'metrics', call: 'get_strategy_metrics', datum: d.metrics },

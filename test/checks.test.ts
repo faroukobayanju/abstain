@@ -257,13 +257,13 @@ describe('#7 LOSS_STREAK', () => {
 
 describe('#8 DATA_GAP — the fail-closed carrier', () => {
   it('passes when every datum is present and coverage spans as_of', () => {
-    const r = dataGap(makeInput());
+    const r = dataGap(makeInput(), STRICT);
     expect(r.verdict).toBe('PASS');
     expect(r.observed).toBe(0);
   });
 
   it('fails and distinguishes absent from failed', () => {
-    const r = dataGap(makeInput({ data: { funding: absent(), openInterest: failed('NexusTimeoutError') } }));
+    const r = dataGap(makeInput({ data: { funding: absent(), openInterest: failed('NexusTimeoutError') } }), STRICT);
     expect(r.verdict).toBe('FAIL');
     expect(r.observed).toBe(2);
     expect(r.detail?.['missing']).toEqual([
@@ -273,7 +273,7 @@ describe('#8 DATA_GAP — the fail-closed carrier', () => {
   });
 
   it('fails when as_of falls outside the published coverage window', () => {
-    const r = dataGap(makeInput({ asOf: '2030-01-01' }));
+    const r = dataGap(makeInput({ asOf: '2030-01-01' }), STRICT);
     expect(r.verdict).toBe('FAIL');
     expect(r.reason).toContain('outside coverage');
   });

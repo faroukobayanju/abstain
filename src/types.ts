@@ -203,6 +203,10 @@ export interface GateInput {
 export interface Policy {
   max_signal_age_s: number;
   require_qualified: boolean;
+  /** Refuse when the strategy signal does not back the proposed side. */
+  require_signal_support: boolean;
+  /** Refuse when any required datum is missing or the window is uncovered. */
+  require_data_complete: boolean;
   max_funding_rate: number;
   max_oi_delta_pct: number;
   max_drawdown_pct: number;

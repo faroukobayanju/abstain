@@ -24,14 +24,14 @@ import { dataGap } from './checks/data.js';
 export function runGate(input: GateInput, policy: Policy): GateOutcome {
   const checks: CheckResult[] = [
     signalStale(input, policy),
-    signalSupport(input),
+    signalSupport(input, policy),
     notQualified(input, policy),
     fundingRegime(input, policy),
     oiShock(input, policy),
     drawdownBudget(input, policy),
     correlatedCluster(input, policy),
     lossStreak(input, policy),
-    dataGap(input),
+    dataGap(input, policy),
     sizeBound(input, policy),
     duplicate(input),
   ];
