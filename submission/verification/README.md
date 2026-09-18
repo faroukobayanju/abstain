@@ -36,7 +36,7 @@ curl --fail --silent --show-error https://x-agent-six.vercel.app/.well-known/xag
 {"schemaVersion":1,"slug":"faroukobayanju-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
 ```
 
-## 3. Capability call — a verifiable no-trade decision
+## 3. Capability call — a refusal that names its reasons
 
 ```bash
 curl --fail --silent --show-error \
@@ -46,24 +46,99 @@ curl --fail --silent --show-error \
   --data '{"symbol":"BTC/USDT","side":"BUY","notional":15000,"policy":"strict"}'
 ```
 
-Current success response (abridged):
+Real response captured from the deployed service, abridged to 3 of the 11 checks
+(the full body contains all eleven, each with its observed value and threshold):
 
 ```json
 {
-  "verdict": "NO_TRADE",
+  "verdict": "ABSTAIN",
   "policy": "strict",
-  "policy_hash": "sha256:e3e38d19376f77ee9...",
-  "as_of": "2026-09-17",
-  "reason": "strategy signal is HOLD; no trade proposed, so no gating required",
-  "checks": [],
-  "receipt": {"seq":1,"hash":"sha256:...","prev_hash":"sha256:0000..."}
+  "policy_hash": "sha256:8fe17ed8f4c036ee52794c8790a1eef7e6a12131cc747d2a9855cce9eced3490",
+  "as_of": "2026-09-18",
+  "checks": [
+    {
+      "id": "SIGNAL_SUPPORT",
+      "verdict": "FAIL",
+      "observed": "HOLD",
+      "threshold": "BUY",
+      "unit": null,
+      "source": {
+        "call": "get_strategy_signal",
+        "outcome": "ok"
+      },
+      "reason": "strategy signals HOLD; no directional signal backs a BUY",
+      "detail": {
+        "trade_intent": "HOLD",
+        "proposed_side": "BUY",
+        "confidence": 0.0508
+      }
+    },
+    {
+      "id": "NOT_QUALIFIED",
+      "verdict": "FAIL",
+      "observed": "NOT_QUALIFIED",
+      "threshold": "QUALIFIED_FOR_OKX_LISTING",
+      "unit": null,
+      "source": {
+        "call": "get_strategy_metrics",
+        "outcome": "ok"
+      },
+      "detail": {
+        "sharpe_ratio": {
+          "observed": 0.2989,
+          "gate": "> 2.0",
+          "pass": false
+        },
+        "trading_period_days": {
+          "observed": 90,
+          "gate": "> 30",
+          "pass": true
+        },
+        "estimated_aum_usdt": {
+          "observed": 100000,
+          "gate": "> 10000",
+          "pass": true
+        }
+      }
+    },
+    {
+      "id": "CORRELATED_CLUSTER",
+      "verdict": "PASS",
+      "observed": 1,
+      "threshold": 2,
+      "unit": "positions",
+      "source": {
+        "call": "get_strategy_trades",
+        "outcome": "ok"
+      },
+      "detail": {
+        "direction": 1,
+        "concurrent_symbols": [],
+        "symbol_exposure_pct": 15
+      }
+    }
+  ],
+  "receipt": {
+    "seq": "<n>",
+    "hash": "sha256:<...>",
+    "prev_hash": "sha256:<...>"
+  },
+  "reason": "SIGNAL_STALE, SIGNAL_SUPPORT, NOT_QUALIFIED, DATA_GAP, DUPLICATE"
 }
 ```
 
-The live strategy currently emits `trade_intent: HOLD`, so nothing was proposed,
-authorized, or refused. A receipt is still written, so the chain has no gaps. When the
-signal is BUY or SELL, the response contains all eleven checks; the deterministic offline
-suite exercises those non-HOLD paths without depending on the live signal's timing.
+Three things a reviewer can check from this alone:
+
+- **`SIGNAL_SUPPORT` fails** because the live strategy emits `HOLD`. Abstain gates what an
+  agent *proposes*, so a proposal with no directional signal behind it is refused rather
+  than waved through.
+- **`NOT_QUALIFIED` names the failing sub-gate**, not a bare boolean: `sharpe_ratio`
+  0.2989 against the published `> 2.0`, while the other two gates pass.
+- **`CORRELATED_CLUSTER` passes** and still appears. Every check is recorded on every
+  evaluation, because a receipt that stopped at the first failure would hide the limits.
+
+Swap `"policy":"strict"` for `"permissive"` and `NOT_QUALIFIED` is skipped instead,
+producing a different `policy_hash` on the same signal.
 
 ## 4. The closer — recompute the chain yourself
 
@@ -72,7 +147,7 @@ curl --fail --silent --show-error https://x-agent-six.vercel.app/v1/verify
 ```
 
 ```json
-{"ok":true,"length":3,"head":"sha256:8cb8b2e41b38ef85f50b62c845ba1edb7c9866a4bc28f805fbfbf61a6a8046c2"}
+{"ok":true,"length":75,"head":"sha256:dae307b243c60e174be351b9fc9d94ebae33163e4324d258adab96bac9a9efaa"}
 ```
 
 Then fetch any receipt and recompute its hash independently:
