@@ -215,6 +215,14 @@ describe('error classification — fail closed, never throw at the call site', (
     expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
   });
 
+  it('rejects out-of-order equity points that could hide current drawdown', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [{ t: 200, equity: 80 }, { t: 100, equity: 100 }] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
   it('rejects malformed values inside a trade record', async () => {
     const trade = {
       symbol: 'BTC/USDT',

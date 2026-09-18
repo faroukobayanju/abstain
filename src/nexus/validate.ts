@@ -91,9 +91,14 @@ export function validateToolPayload<T>(
       string(obj, 'run_id', tool);
       const points = array(obj, 'points', tool);
       if (points.length === 0) throw new NexusParseError(`${tool}.points must not be empty`, tool);
+      let previousTimestamp = -Infinity;
       for (const [index, point] of points.entries()) {
         const p = object(point, tool, `points[${index}]`);
-        finite(p, 't', tool);
+        const timestamp = positive(p, 't', tool);
+        if (timestamp <= previousTimestamp) {
+          throw new NexusParseError(`${tool}.points timestamps must be strictly increasing`, tool);
+        }
+        previousTimestamp = timestamp;
         positive(p, 'equity', tool);
       }
       break;

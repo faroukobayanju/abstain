@@ -101,7 +101,7 @@ keys recursively and preserves array order (`source/src/receipt/schema.ts`).
 cd source && npm ci && npm test
 ```
 
-Expected: **161 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
+Expected: **162 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
 the suite serves the recorded cassettes in `fixtures/` instead of calling Nexus.
 
 The tests that carry the most weight:
