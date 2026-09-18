@@ -31,6 +31,7 @@ import {
   present,
   shockedOi,
 } from './helpers.js';
+import type { OpenInterest } from '../src/types.js';
 
 const STRICT = mergePolicy(BASE_POLICY, 'strict');
 const PERMISSIVE = mergePolicy(BASE_POLICY, 'permissive');
@@ -128,13 +129,50 @@ describe('#4 OI_SHOCK', () => {
     expect(oiShock(makeInput(), STRICT).verdict).toBe('PASS');
   });
 
-  it('skips rather than inventing a baseline when there is no previous snapshot', () => {
+  it('skips only when BOTH the gateway field and the previous day are missing', () => {
     const r = oiShock(
-      makeInput({ data: { openInterest: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-17', open_interest: 1 }) } }),
+      makeInput({
+        data: {
+          openInterest: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-17', open_interest: 1 }),
+          openInterestPrev: absent<OpenInterest>(),
+        },
+      }),
       STRICT,
     );
     expect(r.verdict).toBe('SKIPPED');
     expect(r.reason).toContain('previous');
+  });
+
+  // Live get_open_interest returns no open_interest_prev at all, which left
+  // this check permanently SKIPPED in production. The baseline now comes from
+  // an explicit as_of-1 fetch.
+  it('uses the previous UTC day when the gateway supplies no baseline', () => {
+    const r = oiShock(
+      makeInput({
+        data: {
+          openInterest: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-17', open_interest: 150 }),
+          openInterestPrev: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-16', open_interest: 100 }),
+        },
+      }),
+      STRICT,
+    );
+    expect(r.verdict).toBe('FAIL');
+    expect(r.observed).toBe(50);
+    expect(r.detail?.['baseline']).toBe('previous_utc_day');
+  });
+
+  it('prefers a gateway-supplied baseline when one exists', () => {
+    const r = oiShock(
+      makeInput({
+        data: {
+          openInterest: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-17', open_interest: 101, open_interest_prev: 100 }),
+          openInterestPrev: present({ symbol: 'BTC/USDT', as_of_date: '2026-09-16', open_interest: 9999 }),
+        },
+      }),
+      STRICT,
+    );
+    expect(r.detail?.['baseline']).toBe('gateway');
+    expect(r.observed).toBe(1);
   });
 });
 
@@ -268,24 +306,41 @@ describe('#10 DUPLICATE', () => {
 });
 
 describe('gate runner', () => {
-  it('returns EXECUTE with all ten checks recorded when nothing fails', () => {
+  it('returns EXECUTE with all eleven checks recorded when nothing fails', () => {
     const out = runGate(makeInput(), STRICT);
     expect(out.verdict).toBe('EXECUTE');
-    expect(out.checks).toHaveLength(10);
+    expect(out.checks).toHaveLength(11);
+    expect(new Set(out.checks.map((c) => c.id)).size).toBe(11);
   });
 
   it('runs every check even after one fails — the limits are the evidence', () => {
     const out = runGate(makeInput({ data: { funding: present(hostileFunding) } }), STRICT);
     expect(out.verdict).toBe('ABSTAIN');
-    expect(out.checks).toHaveLength(10);
+    expect(out.checks).toHaveLength(11);
     expect(out.checks.filter((c) => c.verdict === 'PASS').length).toBeGreaterThan(5);
   });
 
-  it('routes HOLD to NO_TRADE with a receipt and an empty checks array', () => {
+  // A HOLD used to short-circuit the entire gate to NO_TRADE with an empty
+  // checks array. In production, where this strategy sits at HOLD almost
+  // always, that meant 70 consecutive receipts contained zero checks and the
+  // gate never actually ran. A HOLD is a reason to refuse, not to skip.
+  it('refuses a HOLD-backed proposal instead of bypassing the gate', () => {
     const out = runGate(makeInput({ data: { signal: present(SIGNAL_HOLD) } }), STRICT);
-    expect(out.verdict).toBe('NO_TRADE');
-    expect(out.checks).toEqual([]);
-    expect(out.reason).toContain('HOLD');
+    expect(out.verdict).toBe('ABSTAIN');
+    expect(out.checks).toHaveLength(11);
+    const support = out.checks.find((c) => c.id === 'SIGNAL_SUPPORT');
+    expect(support?.verdict).toBe('FAIL');
+    expect(support?.observed).toBe('HOLD');
+    expect(support?.reason).toContain('no directional signal');
+  });
+
+  it('refuses a proposal that contradicts the strategy signal', () => {
+    const out = runGate(makeInput({ side: 'SELL' }), STRICT);
+    const support = out.checks.find((c) => c.id === 'SIGNAL_SUPPORT');
+    expect(support?.verdict).toBe('FAIL');
+    expect(support?.observed).toBe('BUY');
+    expect(support?.threshold).toBe('SELL');
+    expect(out.verdict).toBe('ABSTAIN');
   });
 
   it('fails closed to ABSTAIN when Nexus is unreachable', () => {

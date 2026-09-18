@@ -67,7 +67,10 @@ export interface ReplayInputs {
   policy: Policy;
   startingEquity: number;
   /** Point-in-time market data keyed by `${symbol}|${as_of}`; absent entries fail closed. */
-  market: Map<string, { funding: Datum<unknown>; openInterest: Datum<unknown> }>;
+  market: Map<
+    string,
+    { funding: Datum<unknown>; openInterest: Datum<unknown>; openInterestPrev?: Datum<unknown> }
+  >;
   /** Everything genuinely constant across the replay. */
   staticData: Pick<GateData, 'metrics' | 'coverage'>;
 }
@@ -124,6 +127,7 @@ export function replay(inputs: ReplayInputs): ReplayResult {
         trades: present({ run_id: inputs.trades.run_id, trades: knownTrades }),
         funding: (market?.funding ?? { ok: false, outcome: 'absent' }) as GateData['funding'],
         openInterest: (market?.openInterest ?? { ok: false, outcome: 'absent' }) as GateData['openInterest'],
+        openInterestPrev: (market?.openInterestPrev ?? { ok: false, outcome: 'absent' }) as GateData['openInterestPrev'],
       },
       seenSignalIds: new Set(),
       accountEquity: equityWith,

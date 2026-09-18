@@ -18,6 +18,7 @@ export type CheckVerdict = 'PASS' | 'FAIL' | 'SKIPPED';
 
 export const CHECK_IDS = [
   'SIGNAL_STALE',
+  'SIGNAL_SUPPORT',
   'NOT_QUALIFIED',
   'FUNDING_REGIME',
   'OI_SHOCK',
@@ -181,6 +182,8 @@ export interface GateData {
   trades: Datum<Trades>;
   funding: Datum<Funding>;
   openInterest: Datum<OpenInterest>;
+  /** Previous UTC day, so OI_SHOCK can diff without a gateway-supplied baseline. */
+  openInterestPrev: Datum<OpenInterest>;
   coverage: Datum<Coverage>;
 }
 

@@ -367,7 +367,7 @@ describe('as_of resolution — the thing that would have made EXECUTE unreachabl
 });
 
 describe('fetchAll', () => {
-  it('issues the six data calls in parallel after resolving coverage', async () => {
+  it('issues the seven data calls in parallel after resolving coverage', async () => {
     const started: string[] = [];
     let inFlight = 0;
     let maxInFlight = 0;
@@ -391,7 +391,9 @@ describe('fetchAll', () => {
     expect(res.asOf).toBe('2026-09-16');
     expect(started[0]).toBe('get_historical_coverage');
     expect(maxInFlight).toBeGreaterThan(1);
-    expect(started).toHaveLength(7);
+    // coverage, then signal/metrics/equity/trades/funding/OI(as_of)/OI(as_of-1)
+    expect(started).toHaveLength(8);
+    expect(started.filter((n) => n === 'get_open_interest')).toHaveLength(2);
   });
 
   it('one failing call does not prevent the other six from returning', async () => {
@@ -414,8 +416,9 @@ describe('fetchAll', () => {
     expect(data.funding.ok).toBe(true);
   });
 
-  it('passes the resolved as_of to the two point-in-time calls', async () => {
+  it('passes the resolved as_of to the point-in-time calls, plus the day before for OI', async () => {
     const seen: Record<string, unknown> = {};
+    const oiCalls: unknown[] = [];
     const c = new NexusClient({
       mode: 'live',
       apiKey: 'test-api-key',
@@ -423,6 +426,7 @@ describe('fetchAll', () => {
       fetchImpl: async (_url, init) => {
         const parsed = JSON.parse(String((init as RequestInit).body)) as { name: string; arguments: Record<string, unknown> };
         seen[parsed.name] = parsed.arguments;
+        if (parsed.name === 'get_open_interest') oiCalls.push(parsed.arguments);
         const payload = validPayload(parsed.name);
         if ('symbol' in payload && typeof parsed.arguments['symbol'] === 'string') {
           payload['symbol'] = parsed.arguments['symbol'];
@@ -433,6 +437,11 @@ describe('fetchAll', () => {
 
     await fetchAll(c, 'ETH/USDT', Date.UTC(2026, 8, 18), new TtlCache(60_000));
     expect(seen['get_historical_funding']).toEqual({ as_of: '2026-09-16', symbol: 'ETH/USDT' });
-    expect(seen['get_open_interest']).toEqual({ as_of: '2026-09-16', symbol: 'ETH/USDT' });
+    // Two OI calls: the resolved date and the day before it, so OI_SHOCK has a
+    // baseline to diff against without a gateway-supplied one.
+    expect(oiCalls).toEqual([
+      { as_of: '2026-09-16', symbol: 'ETH/USDT' },
+      { as_of: '2026-09-15', symbol: 'ETH/USDT' },
+    ]);
   });
 });
