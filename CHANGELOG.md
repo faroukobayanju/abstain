@@ -2,6 +2,16 @@
 
 All notable changes to Abstain are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Explain the product pain, Nexus dependency, system architecture, trust boundaries, and judge-facing demo flow.
+
+### Removed
+
+- Remove tracked macOS metadata from the reviewable source tree.
+
 ## [0.1.0.0] - 2026-09-18
 
 ### Added
