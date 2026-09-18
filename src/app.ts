@@ -25,8 +25,10 @@ import { verifyChain } from './receipt/verify.js';
 import { ChainContentionError, StoreUnavailableError } from './store/types.js';
 
 export interface AppDeps extends EvaluateDeps {
+  /** True when receipts persist beyond this process. Surfaced on /v1/ready. */
+  durable?: boolean;
   /** Non-gating dependency probe for /v1/ready. */
-  probe?: () => Promise<{ nexus: boolean; store: boolean }>;
+  probe?: () => Promise<{ nexus: boolean; store: boolean; durable?: boolean }>;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -69,7 +71,17 @@ export function createApp(deps: AppDeps) {
     if (!deps.probe) return c.json({ ready: null, reason: 'no probe configured' });
     try {
       const r = await deps.probe();
-      return c.json({ ready: r.nexus && r.store, ...r }, r.nexus && r.store ? 200 : 503);
+      const ready = r.nexus && r.store && deps.durable !== false;
+      return c.json(
+        {
+          ready,
+          ...r,
+          ...(deps.durable === false
+            ? { warning: 'receipts are in-process only and reset on cold start; configure Redis' }
+            : {}),
+        },
+        ready ? 200 : 503,
+      );
     } catch (err) {
       return c.json({ ready: false, error: (err as Error).name }, 503);
     }

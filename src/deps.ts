@@ -28,14 +28,33 @@ export function loadBasePolicy(): Policy {
   return { ...BASE_POLICY };
 }
 
+/**
+ * Vercel's Upstash marketplace integration injects KV_REST_API_URL /
+ * KV_REST_API_TOKEN; a direct Upstash setup uses UPSTASH_REDIS_REST_URL /
+ * _TOKEN. Accept both, because matching only one name silently degrades the
+ * receipt chain to per-instance memory — which looks fine locally and destroys
+ * the product's entire claim in production.
+ */
+export function resolveRedisCredentials(env: NodeJS.ProcessEnv): { url: string; token: string } | null {
+  const url = env['UPSTASH_REDIS_REST_URL'] ?? env['KV_REST_API_URL'];
+  const token = env['UPSTASH_REDIS_REST_TOKEN'] ?? env['KV_REST_API_TOKEN'];
+  return url && token ? { url, token } : null;
+}
+
 export function buildStore(env: NodeJS.ProcessEnv = process.env): {
   store: ReceiptStore;
   durable: boolean;
 } {
-  const url = env['UPSTASH_REDIS_REST_URL'];
-  const token = env['UPSTASH_REDIS_REST_TOKEN'];
-  if (url && token) {
-    return { store: new RedisStore(new UpstashRest({ url, token })), durable: true };
+  const creds = resolveRedisCredentials(env);
+  if (creds) return { store: new RedisStore(new UpstashRest(creds)), durable: true };
+
+  // Never silently ephemeral in production: an evidence chain that resets on a
+  // cold start is not evidence.
+  if (env['VERCEL_ENV'] === 'production') {
+    console.error(
+      'FATAL: no Redis credentials (UPSTASH_REDIS_REST_URL/_TOKEN or KV_REST_API_URL/_TOKEN). ' +
+        'Receipts would be per-instance and would reset on cold start.',
+    );
   }
   return { store: new MemoryStore(), durable: false };
 }
@@ -60,6 +79,7 @@ export function buildDeps(env: NodeJS.ProcessEnv = process.env): AppDeps {
     basePolicy: loadBasePolicy(),
     accountEquity: Number(env['ACCOUNT_EQUITY'] ?? 100_000),
     env,
+      durable,
     probe: async () => {
       const metrics = await client.call('get_strategy_metrics');
       let storeOk = true;
@@ -68,7 +88,7 @@ export function buildDeps(env: NodeJS.ProcessEnv = process.env): AppDeps {
       } catch {
         storeOk = false;
       }
-      return { nexus: metrics.ok, store: storeOk && (durable || true) };
+      return { nexus: metrics.ok, store: storeOk, durable };
     },
   };
 }

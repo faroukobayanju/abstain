@@ -252,3 +252,38 @@ describe('public reads', () => {
     expect((await res.json()).error).toBe('not_found');
   });
 });
+
+describe('store durability is loud, never silent', () => {
+  it('accepts the Vercel Upstash integration variable names', async () => {
+    const { resolveRedisCredentials } = await import('../src/deps.js');
+    expect(resolveRedisCredentials({ KV_REST_API_URL: 'u', KV_REST_API_TOKEN: 't' } as NodeJS.ProcessEnv))
+      .toEqual({ url: 'u', token: 't' });
+  });
+
+  it('accepts the direct Upstash variable names', async () => {
+    const { resolveRedisCredentials } = await import('../src/deps.js');
+    expect(resolveRedisCredentials({ UPSTASH_REDIS_REST_URL: 'u', UPSTASH_REDIS_REST_TOKEN: 't' } as NodeJS.ProcessEnv))
+      .toEqual({ url: 'u', token: 't' });
+  });
+
+  it('returns null when only one half is present, rather than half-configuring', async () => {
+    const { resolveRedisCredentials } = await import('../src/deps.js');
+    expect(resolveRedisCredentials({ KV_REST_API_URL: 'u' } as NodeJS.ProcessEnv)).toBeNull();
+  });
+
+  it('/v1/ready is NOT ready when receipts are ephemeral', async () => {
+    const a = createApp({
+      client: new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' }),
+      store: new MemoryStore(),
+      cache: new TtlCache(60_000),
+      basePolicy: BASE_POLICY,
+      accountEquity: 100_000,
+      env: ENV,
+      durable: false,
+      probe: async () => ({ nexus: true, store: true, durable: false }),
+    });
+    const res = await a.request('/v1/ready');
+    expect(res.status).toBe(503);
+    expect((await res.json()).warning).toContain('cold start');
+  });
+});
