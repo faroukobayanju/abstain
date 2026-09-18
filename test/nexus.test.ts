@@ -173,6 +173,56 @@ describe('error classification — fail closed, never throw at the call site', (
     expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
   });
 
+  it('rejects an invalid strategy signal intent at the trust boundary', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_strategy_signal'), trade_intent: 'WAIT' },
+    }));
+    expect(await c.call('get_strategy_signal', { symbol: 'BTC/USDT' }))
+      .toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects invalid strategy metrics instead of comparing malformed values', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_strategy_metrics'), sharpe_ratio: Number.NaN },
+    }));
+    expect(await c.call('get_strategy_metrics')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects malformed values inside an equity point', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [{ t: 1, equity: 'unknown' }] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects malformed values inside a trade record', async () => {
+    const trade = {
+      symbol: 'BTC/USDT',
+      exit_reason: 'signal',
+      direction: 1,
+      entry_price: 'unknown',
+      exit_price: 101,
+      size: 1,
+      leverage: 1,
+      pnl: 1,
+      pnl_pct: 1,
+      holding_bars: 1,
+      commission: 0,
+      entry_bar_index: 1,
+      exit_bar_index: 2,
+      entry_ts_ms: 1,
+      exit_ts_ms: 2,
+    };
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', trades: [trade] },
+    }));
+    expect(await c.call('get_strategy_trades')).toEqual(failed('NexusParseError'));
+  });
+
   it('classifies every documented status', () => {
     expect(classify(401, 'get_strategy_metrics', '').name).toBe('NexusAuthError');
     expect(classify(400, 'get_strategy_signal', '').name).toBe('NexusBadRequestError');

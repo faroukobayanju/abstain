@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MemoryStore } from '../src/store/memory.js';
 import { ChainContentionError, appendReceipt } from '../src/store/types.js';
 import { GENESIS, canonical, sealReceipt, type ReceiptBody } from '../src/receipt/schema.js';
@@ -202,6 +202,23 @@ describe('canonical form', () => {
 
   it('preserves array order, which is meaningful for checks[]', () => {
     expect(canonical([1, 2])).not.toBe(canonical([2, 1]));
+  });
+});
+
+describe('MemoryStore rate limiting', () => {
+  it('starts a fresh allowance after the fixed window expires', async () => {
+    const now = vi.spyOn(Date, 'now');
+    try {
+      const store = new MemoryStore();
+      now.mockReturnValue(1_000);
+      expect(await store.allowWrite('client', 1, 60_000)).toBe(true);
+      now.mockReturnValue(60_999);
+      expect(await store.allowWrite('client', 1, 60_000)).toBe(false);
+      now.mockReturnValue(61_000);
+      expect(await store.allowWrite('client', 1, 60_000)).toBe(true);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 

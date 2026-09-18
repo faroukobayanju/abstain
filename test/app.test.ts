@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { NexusClient } from '../src/nexus/client.js';
 import { TtlCache } from '../src/nexus/fetch-all.js';
@@ -282,6 +282,19 @@ describe('store durability is loud, never silent', () => {
     } as NodeJS.ProcessEnv)).toBeNull();
   });
 
+  it('logs loudly and returns an explicitly ephemeral store when production credentials are missing', async () => {
+    const { buildStore } = await import('../src/deps.js');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const built = buildStore({ VERCEL_ENV: 'production' } as NodeJS.ProcessEnv);
+      expect(built.durable).toBe(false);
+      expect(built.store).toBeInstanceOf(MemoryStore);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('FATAL: no Redis credentials'));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('/v1/ready is NOT ready when receipts are ephemeral', async () => {
     const a = createApp({
       client: new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' }),
@@ -337,5 +350,71 @@ describe('store durability is loud, never silent', () => {
       'X-ABSTAIN-KEY': KEY,
       'X-Forwarded-For': '198.51.100.7',
     })).status).toBe(200);
+  });
+
+  it('rejects an oversized declared request before parsing or rate limiting it', async () => {
+    const res = await app().request('/v1/evaluate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': '16385',
+        'X-ABSTAIN-KEY': KEY,
+      },
+      body: JSON.stringify(VALID),
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large', max_bytes: 16384 });
+  });
+
+  it('enforces the global limiter after the client limiter allows the request', async () => {
+    const backing = new MemoryStore();
+    const store: ReceiptStore = {
+      head: () => backing.head(),
+      compareAndAppend: (expected, receipt) => backing.compareAndAppend(expected, receipt),
+      get: (seq) => backing.get(seq),
+      all: () => backing.all(),
+      allowWrite: async (scope) => scope !== 'evaluate:global',
+    };
+    const res = await post(app(store), '/v1/evaluate', VALID, {
+      'X-ABSTAIN-KEY': KEY,
+      'X-Forwarded-For': '198.51.100.10',
+    });
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('60');
+    expect(await res.json()).toMatchObject({ error: 'rate_limited', limit: 200, window_ms: 60_000 });
+    expect(await backing.all()).toHaveLength(0);
+  });
+
+  it('normalizes the first forwarded client identity and keeps clients in separate scopes', async () => {
+    const backing = new MemoryStore();
+    const scopes: string[] = [];
+    const store: ReceiptStore = {
+      head: () => backing.head(),
+      compareAndAppend: (expected, receipt) => backing.compareAndAppend(expected, receipt),
+      get: (seq) => backing.get(seq),
+      all: () => backing.all(),
+      allowWrite: async (scope) => {
+        scopes.push(scope);
+        return true;
+      },
+    };
+    const a = app(store);
+    const forwarded = [
+      '198.51.100.7, 10.0.0.1',
+      'client id/with spaces',
+      'a'.repeat(80),
+      undefined,
+    ];
+    for (const value of forwarded) {
+      const headers: Record<string, string> = { 'X-ABSTAIN-KEY': KEY };
+      if (value !== undefined) headers['X-Forwarded-For'] = value;
+      expect((await post(a, '/v1/evaluate', VALID, headers)).status).toBe(200);
+    }
+    expect(scopes.filter((scope) => scope.startsWith('evaluate:client:'))).toEqual([
+      'evaluate:client:198.51.100.7',
+      'evaluate:client:client_id_with_spaces',
+      `evaluate:client:${'a'.repeat(64)}`,
+      'evaluate:client:unknown',
+    ]);
   });
 });
