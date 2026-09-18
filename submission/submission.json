@@ -4,7 +4,7 @@
   "slug": "faroukobayanju-abstain",
   "sourceRepository": "https://github.com/faroukobayanju/abstain",
   "reviewCommit": "REPLACE_WITH_40_CHAR_SHA",
-  "apiBaseUrl": "https://REPLACE_ME.vercel.app/v1",
-  "healthCheckUrl": "https://REPLACE_ME.vercel.app/health",
-  "deploymentProofUrl": "https://REPLACE_ME.vercel.app/.well-known/xagent-verification.json"
+  "apiBaseUrl": "https://x-agent-six.vercel.app/v1",
+  "healthCheckUrl": "https://x-agent-six.vercel.app/health",
+  "deploymentProofUrl": "https://x-agent-six.vercel.app/.well-known/xagent-verification.json"
 }

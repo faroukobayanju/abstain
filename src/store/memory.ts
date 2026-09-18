@@ -13,6 +13,7 @@ import type { Head, ReceiptStore } from './types.js';
 export class MemoryStore implements ReceiptStore {
   private records: Receipt[] = [];
   private currentHead: Head | null = null;
+  private readonly rateWindows = new Map<string, { startedAt: number; count: number }>();
 
   constructor(private readonly onBeforeWrite?: () => Promise<void>) {}
 
@@ -37,6 +38,17 @@ export class MemoryStore implements ReceiptStore {
 
   async all(): Promise<Receipt[]> {
     return [...this.records].sort((a, b) => a.seq - b.seq);
+  }
+
+  async allowWrite(scope: string, limit: number, windowMs: number): Promise<boolean> {
+    const now = Date.now();
+    const current = this.rateWindows.get(scope);
+    if (!current || now - current.startedAt >= windowMs) {
+      this.rateWindows.set(scope, { startedAt: now, count: 1 });
+      return true;
+    }
+    current.count++;
+    return current.count <= limit;
   }
 }
 

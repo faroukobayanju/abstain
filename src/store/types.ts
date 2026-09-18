@@ -35,6 +35,8 @@ export interface ReceiptStore {
   compareAndAppend(expected: Head | null, receipt: Receipt): Promise<boolean>;
   get(seq: number): Promise<Receipt | null>;
   all(): Promise<Receipt[]>;
+  /** Distributed in production; process-local in replay/tests. */
+  allowWrite(scope: string, limit: number, windowMs: number): Promise<boolean>;
 }
 
 export class ChainContentionError extends Error {
@@ -51,7 +53,29 @@ export class StoreUnavailableError extends Error {
   }
 }
 
-export const MAX_CAS_ATTEMPTS = 5;
+export const MAX_CAS_ATTEMPTS = 16;
+
+function markDuplicate(body: ReceiptBody): ReceiptBody {
+  let found = false;
+  const checks = body.checks.map((check) => {
+    if (check.id !== 'DUPLICATE') return check;
+    found = true;
+    return {
+      ...check,
+      verdict: 'FAIL' as const,
+      reason: 'signal_id already present in the receipt chain',
+    };
+  });
+  if (!found) return body;
+
+  const failed = checks.filter((check) => check.verdict === 'FAIL').map((check) => check.id);
+  return {
+    ...body,
+    verdict: 'ABSTAIN',
+    checks,
+    reason: failed.join(', '),
+  };
+}
 
 /**
  * Append a receipt, resolving contention by retrying against the fresh head.
@@ -62,13 +86,29 @@ export async function appendReceipt(
   store: ReceiptStore,
   body: ReceiptBody,
   maxAttempts = MAX_CAS_ATTEMPTS,
+  initialSnapshot?: readonly Receipt[],
 ): Promise<Receipt> {
+  let candidate = body;
+  let snapshot = initialSnapshot ? [...initialSnapshot] : await store.all();
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const head = await store.head();
+    if (
+      candidate.verdict !== 'NO_TRADE'
+      && snapshot.some((record) => record.signal_id === candidate.signal_id)
+    ) {
+      candidate = markDuplicate(candidate);
+    }
+
+    const last = snapshot.at(-1);
+    const head = last ? { seq: last.seq, hash: last.hash } : null;
     const seq = (head?.seq ?? 0) + 1;
     const prev = head?.hash ?? GENESIS;
-    const receipt = sealReceipt(body, seq, prev);
+    const receipt = sealReceipt(candidate, seq, prev);
     if (await store.compareAndAppend(head, receipt)) return receipt;
+
+    // The decision was computed from `snapshot`, and the CAS is bound to that
+    // snapshot's head. If anything landed after the decision was made, the CAS
+    // must lose before we refresh state and reconsider DUPLICATE.
+    snapshot = await store.all();
   }
   throw new ChainContentionError(maxAttempts);
 }

@@ -26,10 +26,10 @@ Nexus's, so Abstain refuses and records evidence before Nexus silently halts.
 
 ## Live API
 
-- **API base URL:** `https://REPLACE_ME.vercel.app/v1`
-- **Health-check URL:** `https://REPLACE_ME.vercel.app/health`
+- **API base URL:** `https://x-agent-six.vercel.app/v1`
+- **Health-check URL:** `https://x-agent-six.vercel.app/health`
 - **Authentication:** Reads are fully public and require no credential — a chain only a privileged caller can inspect is not evidence. The single write (`POST /v1/evaluate`) requires `X-ABSTAIN-KEY`; the reviewer demo key is in `verification/README.md` and is a demo credential, not a secret.
-- **Rate limits / known limits:** No rate limit configured. An evaluation issues up to seven Nexus calls in parallel behind a 60-second TTL cache; the per-call timeout is 10s with a per-error-class retry budget. Nexus itself limits concurrent backtests (HTTP 429).
+- **Rate limits / known limits:** Authenticated writes are limited to 20 evaluations per client per minute, with a separate 200-per-minute global safety ceiling in the durable Redis store, which bounds how quickly the public demo key can grow the append-only chain. An evaluation issues up to seven Nexus calls in parallel behind a 60-second TTL cache; the per-call timeout is 10s with a per-error-class retry budget. Nexus itself limits concurrent backtests (HTTP 429).
 - **API contract:**
 
 | Method | Path | Auth | Purpose |
@@ -58,17 +58,19 @@ Nexus's, so Abstain refuses and records evidence before Nexus silently halts.
 | 9 | `SIZE_BOUND` | notional outside `[min_notional, max_notional]` | request |
 | 10 | `DUPLICATE` | `signal_id` already committed to the chain | receipt chain |
 
-All ten run on every evaluation. A receipt that stops at the first failure hides the
-limits, and the limits are the evidence.
+For a BUY or SELL proposal, all ten run on every evaluation. A HOLD signal returns
+`NO_TRADE` before gating because there is no proposed execution; that outcome is still
+written to the receipt chain. A receipt that stops at the first failed check would hide
+the remaining limits, so non-HOLD evaluations always record all ten.
 
 ## Source and reproducibility
 
 - **Source repository:** `https://github.com/faroukobayanju/abstain`
 - **Review commit:** `REPLACE_WITH_40_CHAR_SHA`
 - **Source submitted in this PR:** `source/`
-- **Run tests:** `npm ci && npm test` — 127 tests, no API key and no network required
+- **Run tests:** `npm ci && npm test` — 162 tests, no API key and no network required
 - **Run locally:** `npm run build && COMMIT_SHA=$(git rev-parse HEAD) ABSTAIN_WRITE_KEY=demo-key npm start`
-- **Deploy:** Vercel git integration; `vercel.json` rewrites all paths to `api/index.ts`. Set `ABSTAIN_WRITE_KEY`, and optionally `NEXUS_API_KEY` + `NEXUS_MODE=live`, `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`.
+- **Deploy:** Vercel git integration; `vercel.json` rewrites all paths to `api/index.ts`. Set `ABSTAIN_WRITE_KEY`, `NEXUS_API_KEY` + `NEXUS_MODE=live`, and either `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` or Vercel's `KV_REST_API_URL` + `KV_REST_API_TOKEN`. Production evaluations refuse to run without durable storage.
 - **Version binding:** `/health` reports `VERCEL_GIT_COMMIT_SHA` in the body and in the `x-source-commit` response header. It has **zero external dependencies** by design: coupling a hard gate to Nexus or Redis uptime would let a third party fail a gate already passed.
 
 ```json
@@ -107,8 +109,8 @@ from Nexus and committed under `source/fixtures/`.
 
 Check #2 names the failing sub-gate rather than returning a bare boolean. Because a
 standing refusal would leave no `EXECUTE` path at all, `require_qualified` is the one
-key that differs between the `strict` and `permissive` policies — the same signal
-under two published policies yields two verdicts and two `policy_hash` values.
+key that differs between the `strict` and `permissive` policies. The published policy
+endpoint exposes two distinct `policy_hash` values without weakening replay protection.
 
 ### 2. A refusal derived from a real loss
 
@@ -158,7 +160,7 @@ ships as committed, the frontier ships beside it, and `GET /v1/policy` plus
 
 ## Security and data handling
 
-- **Data collected:** None from callers beyond the request body (`symbol`, `side`, `notional`, optional `signalId`/`policy`). No personal data, no accounts, no cookies.
+- **Data collected:** None from callers beyond the request body (`symbol`, `side`, `notional`, optional `policy`). Signal identity is derived server-side from Nexus and cannot be overridden by callers. No personal data, no accounts, no cookies.
 - **Purpose and retention:** Receipts are retained indefinitely by design — an append-only evidence chain whose records can be deleted is not evidence.
 - **Third parties / outbound network calls:** OlaXBT Nexus MCP (`nexus.olaxbt.xyz`) and, when configured, Upstash Redis REST. No others.
 - **Secrets:** No secrets are committed. `.gitignore` excludes `.env*`; the repository contains no `nxk_` value. `NEXUS_API_KEY` is server-side only and never appears in a response. The `X-ABSTAIN-KEY` published for review is a demo write credential, deliberately disclosed.
@@ -167,4 +169,4 @@ ships as committed, the frontier ships beside it, and `GET /v1/policy` plus
 ## Support
 
 - **Team / builder:** faroukobayanju
-- **Contact:** `REPLACE_WITH_CONTACT`
+- **Contact:** `https://github.com/faroukobayanju`

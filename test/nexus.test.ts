@@ -16,7 +16,32 @@ function respond(status: number, body: unknown, ok = status < 400): Response {
 }
 
 function clientWith(fetchImpl: typeof fetch) {
-  return new NexusClient({ mode: 'live', apiKey: 'nxk_test', fetchImpl, sleep: noSleep });
+  return new NexusClient({ mode: 'live', apiKey: 'test-api-key', fetchImpl, sleep: noSleep });
+}
+
+function validPayload(tool: string): Record<string, unknown> {
+  switch (tool) {
+    case 'get_historical_coverage':
+      return { start: '2025-01-01', end: '2026-09-16' };
+    case 'get_strategy_signal':
+      return { symbol: 'BTC/USDT', trade_intent: 'BUY', reasoning_log: 'test', timestamp: 1_789_689_600 };
+    case 'get_strategy_metrics':
+      return {
+        sharpe_ratio: 1, trading_period_days: 90, estimated_aum_usdt: 100_000,
+        profit_factor: 1.2, max_drawdown: '5%', total_return_pct: 10,
+        win_rate_pct: 55, trade_count: 20, status: 'QUALIFIED_FOR_OKX_LISTING',
+      };
+    case 'get_strategy_equity':
+      return { run_id: 'r', points: [{ t: 1, equity: 100_000 }] };
+    case 'get_strategy_trades':
+      return { run_id: 'r', trades: [] };
+    case 'get_historical_funding':
+      return { symbol: 'BTC/USDT', as_of_date: '2026-09-16', last_funding_rate: 0 };
+    case 'get_open_interest':
+      return { symbol: 'BTC/USDT', as_of_date: '2026-09-16', open_interest: 100, open_interest_prev: 99 };
+    default:
+      return {};
+  }
 }
 
 describe('envelope unwrapping', () => {
@@ -99,9 +124,9 @@ describe('error classification — fail closed, never throw at the call site', (
     let calls = 0;
     const c = clientWith(async () => {
       calls++;
-      return calls === 1 ? respond(502, 'x') : respond(200, { ok: true, content: { sharpe_ratio: 1 } });
+      return calls === 1 ? respond(502, 'x') : respond(200, { ok: true, content: validPayload('get_strategy_metrics') });
     });
-    expect(await c.call<Metrics>('get_strategy_metrics')).toEqual(present({ sharpe_ratio: 1 }));
+    expect(await c.call<Metrics>('get_strategy_metrics')).toEqual(present(validPayload('get_strategy_metrics')));
   });
 
   it('a non-JSON body is a parse failure, not a silent empty result', async () => {
@@ -109,6 +134,132 @@ describe('error classification — fail closed, never throw at the call site', (
       ({ ok: true, status: 200, json: async () => { throw new Error('bad'); }, text: async () => '' }) as unknown as Response,
     );
     expect(await c.call('get_strategy_metrics')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects malformed numeric payloads before they can pass a gate comparison', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_historical_funding'), last_funding_rate: 'not-a-number' },
+    }));
+    expect(await c.call('get_historical_funding')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects a payload for a different requested market or date', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: validPayload('get_historical_funding'),
+    }));
+    expect(await c.call('get_historical_funding', {
+      symbol: 'ETH/USDT',
+      as_of: '2026-09-17',
+    })).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects open interest without the prior snapshot needed by OI_SHOCK', async () => {
+    const payload = validPayload('get_open_interest');
+    delete payload['open_interest_prev'];
+    const c = clientWith(async () => respond(200, { ok: true, content: payload }));
+    expect(await c.call('get_open_interest', {
+      symbol: 'BTC/USDT',
+      as_of: '2026-09-16',
+    })).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects an empty equity series instead of treating missing evidence as usable', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects an invalid strategy signal intent at the trust boundary', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_strategy_signal'), trade_intent: 'WAIT' },
+    }));
+    expect(await c.call('get_strategy_signal', { symbol: 'BTC/USDT' }))
+      .toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects a nonpositive strategy signal timestamp', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_strategy_signal'), timestamp: 0 },
+    }));
+    expect(await c.call('get_strategy_signal', { symbol: 'BTC/USDT' }))
+      .toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects invalid strategy metrics instead of comparing malformed values', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { ...validPayload('get_strategy_metrics'), sharpe_ratio: Number.NaN },
+    }));
+    expect(await c.call('get_strategy_metrics')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects malformed values inside an equity point', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [{ t: 1, equity: 'unknown' }] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects nonpositive equity instead of turning it into zero drawdown', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [{ t: 1, equity: 0 }] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects out-of-order equity points that could hide current drawdown', async () => {
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', points: [{ t: 200, equity: 80 }, { t: 100, equity: 100 }] },
+    }));
+    expect(await c.call('get_strategy_equity')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects malformed values inside a trade record', async () => {
+    const trade = {
+      symbol: 'BTC/USDT',
+      exit_reason: 'signal',
+      direction: 1,
+      entry_price: 'unknown',
+      exit_price: 101,
+      size: 1,
+      leverage: 1,
+      pnl: 1,
+      pnl_pct: 1,
+      holding_bars: 1,
+      commission: 0,
+      entry_bar_index: 1,
+      exit_bar_index: 2,
+      entry_ts_ms: 1,
+      exit_ts_ms: 2,
+    };
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', trades: [trade] },
+    }));
+    expect(await c.call('get_strategy_trades')).toEqual(failed('NexusParseError'));
+  });
+
+  it('rejects a trade direction outside the documented 1/-1 domain', async () => {
+    const trade = {
+      symbol: 'BTC/USDT', exit_reason: 'signal', direction: 0,
+      entry_price: 100, exit_price: 101, size: 1, leverage: 1, pnl: 1, pnl_pct: 1,
+      holding_bars: 1, commission: 0, entry_bar_index: 1, exit_bar_index: 2,
+      entry_ts_ms: 1, exit_ts_ms: 2,
+    };
+    const c = clientWith(async () => respond(200, {
+      ok: true,
+      content: { run_id: 'r', trades: [trade] },
+    }));
+    expect(await c.call('get_strategy_trades')).toEqual(failed('NexusParseError'));
   });
 
   it('classifies every documented status', () => {
@@ -222,7 +373,7 @@ describe('fetchAll', () => {
     let maxInFlight = 0;
     const c = new NexusClient({
       mode: 'live',
-      apiKey: 'nxk_test',
+      apiKey: 'test-api-key',
       sleep: noSleep,
       fetchImpl: async (_url, init) => {
         const name = JSON.parse(String((init as RequestInit).body)).name as string;
@@ -231,8 +382,7 @@ describe('fetchAll', () => {
         maxInFlight = Math.max(maxInFlight, inFlight);
         await new Promise((r) => setImmediate(r));
         inFlight--;
-        const payload =
-          name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        const payload = validPayload(name);
         return respond(200, { ok: true, content: payload });
       },
     });
@@ -247,13 +397,12 @@ describe('fetchAll', () => {
   it('one failing call does not prevent the other six from returning', async () => {
     const c = new NexusClient({
       mode: 'live',
-      apiKey: 'nxk_test',
+      apiKey: 'test-api-key',
       sleep: noSleep,
       fetchImpl: async (_url, init) => {
         const name = JSON.parse(String((init as RequestInit).body)).name as string;
         if (name === 'get_open_interest') return respond(502, 'down');
-        const payload =
-          name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        const payload = validPayload(name);
         return respond(200, { ok: true, content: payload });
       },
     });
@@ -269,13 +418,15 @@ describe('fetchAll', () => {
     const seen: Record<string, unknown> = {};
     const c = new NexusClient({
       mode: 'live',
-      apiKey: 'nxk_test',
+      apiKey: 'test-api-key',
       sleep: noSleep,
       fetchImpl: async (_url, init) => {
         const parsed = JSON.parse(String((init as RequestInit).body)) as { name: string; arguments: Record<string, unknown> };
         seen[parsed.name] = parsed.arguments;
-        const payload =
-          parsed.name === 'get_historical_coverage' ? { start: '2025-01-01', end: '2026-09-16' } : { x: 1 };
+        const payload = validPayload(parsed.name);
+        if ('symbol' in payload && typeof parsed.arguments['symbol'] === 'string') {
+          payload['symbol'] = parsed.arguments['symbol'];
+        }
         return respond(200, { ok: true, content: payload });
       },
     });

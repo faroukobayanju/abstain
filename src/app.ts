@@ -24,6 +24,18 @@ import { mergePolicy, policyHash, type PolicyName } from './policy/index.js';
 import { verifyChain } from './receipt/verify.js';
 import { ChainContentionError, StoreUnavailableError } from './store/types.js';
 
+const MAX_REQUEST_BYTES = 16_384;
+const WRITE_LIMIT = 20;
+const GLOBAL_WRITE_LIMIT = 200;
+const WRITE_WINDOW_MS = 60_000;
+
+function clientRateScope(forwardedFor: string | undefined): string {
+  const client = (forwardedFor?.split(',')[0]?.trim() || 'unknown')
+    .replace(/[^a-zA-Z0-9:._-]/g, '_')
+    .slice(0, 64);
+  return `evaluate:client:${client}`;
+}
+
 export interface AppDeps extends EvaluateDeps {
   /** True when receipts persist beyond this process. Surfaced on /v1/ready. */
   durable?: boolean;
@@ -146,12 +158,57 @@ export function createApp(deps: AppDeps) {
       );
     }
 
+    if (env['VERCEL_ENV'] === 'production' && deps.durable !== true) {
+      return c.json(
+        { error: 'store_not_durable', reason: 'production evaluations require durable Redis storage', receipt_written: false },
+        503,
+      );
+    }
+
+    const contentLength = Number(c.req.header('content-length') ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
+      return c.json({ error: 'payload_too_large', max_bytes: MAX_REQUEST_BYTES }, 413);
+    }
+
     let req;
     try {
-      req = validate(await c.req.json().catch(() => null));
+      const rawBody = await c.req.text();
+      if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+        return c.json({ error: 'payload_too_large', max_bytes: MAX_REQUEST_BYTES }, 413);
+      }
+      req = validate(JSON.parse(rawBody));
     } catch (err) {
+      if (err instanceof SyntaxError) {
+        return c.json({ error: 'bad_request', field: 'body', reason: 'body must be valid JSON' }, 400);
+      }
       if (err instanceof ValidationError) {
         return c.json({ error: 'bad_request', field: err.field, reason: err.message }, 400);
+      }
+      throw err;
+    }
+
+    try {
+      const clientAllowed = await deps.store.allowWrite(
+        clientRateScope(c.req.header('x-forwarded-for')),
+        WRITE_LIMIT,
+        WRITE_WINDOW_MS,
+      );
+      if (!clientAllowed) {
+        c.header('retry-after', String(WRITE_WINDOW_MS / 1000));
+        return c.json({ error: 'rate_limited', limit: WRITE_LIMIT, window_ms: WRITE_WINDOW_MS }, 429);
+      }
+      const globalAllowed = await deps.store.allowWrite(
+        'evaluate:global',
+        GLOBAL_WRITE_LIMIT,
+        WRITE_WINDOW_MS,
+      );
+      if (!globalAllowed) {
+        c.header('retry-after', String(WRITE_WINDOW_MS / 1000));
+        return c.json({ error: 'rate_limited', limit: GLOBAL_WRITE_LIMIT, window_ms: WRITE_WINDOW_MS }, 429);
+      }
+    } catch (err) {
+      if (err instanceof StoreUnavailableError) {
+        return c.json({ error: 'store_unavailable', reason: err.message, receipt_written: false }, 503);
       }
       throw err;
     }

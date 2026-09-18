@@ -29,6 +29,7 @@ import {
   type NexusError,
 } from './errors.js';
 import { absent, failed, present, type Datum } from '../types.js';
+import { validateToolPayload } from './validate.js';
 
 export interface ClientOptions {
   baseUrl?: string;
@@ -125,14 +126,14 @@ export class NexusClient {
     } catch {
       throw new NexusParseError(`non-JSON body from ${tool}`, tool, res.status);
     }
-    return unwrap<T>(body, tool);
+    return validateToolPayload<T>(tool, unwrap<unknown>(body, tool), args);
   }
 
   private replay<T>(tool: string, args: Record<string, unknown>): Datum<T> {
     const name = cassetteName(tool, args);
     try {
       const raw = readFileSync(join(this.fixtureDir, name), 'utf8');
-      return present(unwrap<T>(JSON.parse(raw), tool));
+      return present(validateToolPayload<T>(tool, unwrap<unknown>(JSON.parse(raw), tool), args));
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return absent<T>();
       return failed<T>('NexusParseError');

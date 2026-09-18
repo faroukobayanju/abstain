@@ -5,13 +5,13 @@ Every step below is runnable by a reviewer with no OlaXBT account and no API key
 ## Prerequisites
 
 - Review commit: `REPLACE_WITH_40_CHAR_SHA`
-- API base URL: `https://REPLACE_ME.vercel.app/v1`
-- Authentication: reads need none. The single write endpoint needs `X-ABSTAIN-KEY: REPLACE_WITH_DEMO_KEY` — a **demo write credential published deliberately** so reviewers can exercise the capability. It grants exactly one ability: appending a receipt to a public, append-only chain. It is not a Nexus credential and cannot read, trade, or move anything.
+- API base URL: `https://x-agent-six.vercel.app/v1`
+- Authentication: reads need none. The single write endpoint needs `X-ABSTAIN-KEY: abstain-review-4be3c5d8359c582e` — a **demo write credential published deliberately** so reviewers can exercise the capability. It grants exactly one ability: appending a receipt to a public, append-only chain. It is not a Nexus credential and cannot read, trade, or move anything.
 
 ## 1. Health check
 
 ```bash
-curl --fail --silent --show-error https://REPLACE_ME.vercel.app/health
+curl --fail --silent --show-error https://x-agent-six.vercel.app/health
 ```
 
 Expected response:
@@ -29,53 +29,46 @@ unset and the receipt store unreachable — asserted by a test
 ## 2. Deployment proof
 
 ```bash
-curl --fail --silent --show-error https://REPLACE_ME.vercel.app/.well-known/xagent-verification.json
+curl --fail --silent --show-error https://x-agent-six.vercel.app/.well-known/xagent-verification.json
 ```
 
 ```json
 {"schemaVersion":1,"slug":"faroukobayanju-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
 ```
 
-## 3. Capability call — a refusal with its reason
+## 3. Capability call — a verifiable no-trade decision
 
 ```bash
 curl --fail --silent --show-error \
-  --request POST https://REPLACE_ME.vercel.app/v1/evaluate \
+  --request POST https://x-agent-six.vercel.app/v1/evaluate \
   --header 'content-type: application/json' \
-  --header 'x-abstain-key: REPLACE_WITH_DEMO_KEY' \
+  --header 'x-abstain-key: abstain-review-4be3c5d8359c582e' \
   --data '{"symbol":"BTC/USDT","side":"BUY","notional":15000,"policy":"strict"}'
 ```
 
-Success response (abridged — all ten checks are present in the real body):
+Current success response (abridged):
 
 ```json
 {
-  "verdict": "ABSTAIN",
+  "verdict": "NO_TRADE",
   "policy": "strict",
   "policy_hash": "sha256:e3e38d19376f77ee9...",
   "as_of": "2026-09-17",
-  "reason": "NOT_QUALIFIED",
-  "checks": [
-    {"id":"NOT_QUALIFIED","verdict":"FAIL","observed":"NOT_QUALIFIED",
-     "threshold":"QUALIFIED_FOR_OKX_LISTING","unit":null,
-     "source":{"call":"get_strategy_metrics","outcome":"ok"},
-     "detail":{"sharpe_ratio":{"observed":0.2989,"gate":"> 2.0","pass":false},
-               "trading_period_days":{"observed":90,"gate":"> 30","pass":true},
-               "estimated_aum_usdt":{"observed":100000,"gate":"> 10000","pass":true}}}
-  ],
+  "reason": "strategy signal is HOLD; no trade proposed, so no gating required",
+  "checks": [],
   "receipt": {"seq":1,"hash":"sha256:...","prev_hash":"sha256:0000..."}
 }
 ```
 
-The live strategy currently emits `trade_intent: HOLD`, which correctly returns
-`"verdict":"NO_TRADE"` with an empty `checks` array and a stated reason — nothing was
-proposed, so nothing was authorized or refused. A receipt is still written, so the
-chain has no gaps.
+The live strategy currently emits `trade_intent: HOLD`, so nothing was proposed,
+authorized, or refused. A receipt is still written, so the chain has no gaps. When the
+signal is BUY or SELL, the response contains all ten checks; the deterministic offline
+suite exercises those non-HOLD paths without depending on the live signal's timing.
 
 ## 4. The closer — recompute the chain yourself
 
 ```bash
-curl --fail --silent --show-error https://REPLACE_ME.vercel.app/v1/verify
+curl --fail --silent --show-error https://x-agent-six.vercel.app/v1/verify
 ```
 
 ```json
@@ -85,7 +78,7 @@ curl --fail --silent --show-error https://REPLACE_ME.vercel.app/v1/verify
 Then fetch any receipt and recompute its hash independently:
 
 ```bash
-curl --fail --silent --show-error https://REPLACE_ME.vercel.app/v1/receipts/1
+curl --fail --silent --show-error https://x-agent-six.vercel.app/v1/receipts/1
 ```
 
 `hash = sha256(canonical({...body, seq, prev_hash}))`, where `canonical` sorts object
@@ -108,7 +101,7 @@ keys recursively and preserves array order (`source/src/receipt/schema.ts`).
 cd source && npm ci && npm test
 ```
 
-Expected: **127 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
+Expected: **162 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
 the suite serves the recorded cassettes in `fixtures/` instead of calling Nexus.
 
 The tests that carry the most weight:
@@ -119,7 +112,7 @@ The tests that carry the most weight:
 | `chain.test.ts` "names the exact sequence number of an edited receipt" | tampering with receipt 17 of 40 makes `/v1/verify` report `divergedAt: 17`, not a vague failure. Also covers a deleted record and a re-sealed record whose link no longer matches. |
 | `checks.test.ts` "reproduces the reported 7.62% drawdown" | `DRAWDOWN_BUDGET` independently derives the same figure Nexus reports, from the recorded equity curve. |
 | `checks.test.ts` "refuses a BTC long while ETH and SOL are open long at bar 50" | the headline refusal, on real trade data. |
-| `checks.test.ts` "same signal, two policies, two verdicts" | the strict/permissive claim. |
+| `checks.test.ts` "same signal, two policies, two verdicts" | pure policy comparison without weakening live replay protection. |
 | `nexus.test.ts` "404 on a KNOWN tool is an ABSENCE" | Nexus overloads 404 for two facts; receipts keep them apart. |
 | `replay.test.ts` "never shows the gate an equity point from the future" | the replay has no lookahead. A loss placed after trade 1 must not affect trade 1's verdict. |
 

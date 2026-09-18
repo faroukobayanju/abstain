@@ -36,9 +36,18 @@ export function loadBasePolicy(): Policy {
  * the product's entire claim in production.
  */
 export function resolveRedisCredentials(env: NodeJS.ProcessEnv): { url: string; token: string } | null {
-  const url = env['UPSTASH_REDIS_REST_URL'] ?? env['KV_REST_API_URL'];
-  const token = env['UPSTASH_REDIS_REST_TOKEN'] ?? env['KV_REST_API_TOKEN'];
-  return url && token ? { url, token } : null;
+  const upstashUrl = env['UPSTASH_REDIS_REST_URL'];
+  const upstashToken = env['UPSTASH_REDIS_REST_TOKEN'];
+  if (upstashUrl && upstashToken) return { url: upstashUrl, token: upstashToken };
+
+  const kvUrl = env['KV_REST_API_URL'];
+  const kvToken = env['KV_REST_API_TOKEN'];
+  if (kvUrl && kvToken) return { url: kvUrl, token: kvToken };
+
+  // Never combine a URL from one integration namespace with a token from the
+  // other. That produces a credential pair that looks configured but can
+  // never authenticate.
+  return null;
 }
 
 export function buildStore(env: NodeJS.ProcessEnv = process.env): {
@@ -79,7 +88,7 @@ export function buildDeps(env: NodeJS.ProcessEnv = process.env): AppDeps {
     basePolicy: loadBasePolicy(),
     accountEquity: Number(env['ACCOUNT_EQUITY'] ?? 100_000),
     env,
-      durable,
+    durable,
     probe: async () => {
       const metrics = await client.call('get_strategy_metrics');
       let storeOk = true;

@@ -58,6 +58,16 @@ describe('#1 SIGNAL_STALE', () => {
     expect(r.observed).toBe(1800);
   });
 
+  it('fails closed when the signal timestamp is in the future', () => {
+    const now = 1_789_682_946_000;
+    const r = signalStale(makeInput({
+      now,
+      data: { signal: present(buyingSignal(now / 1000 + 1)) },
+    }), STRICT);
+    expect(r.verdict).toBe('FAIL');
+    expect(r.reason).toBe('signal timestamp is in the future');
+  });
+
   it('skips when the signal could not be read, naming the outcome', () => {
     const r = signalStale(makeInput({ data: { signal: failed('NexusTimeoutError') } }), STRICT);
     expect(r.verdict).toBe('SKIPPED');
