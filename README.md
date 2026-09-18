@@ -4,6 +4,49 @@ Abstain is a pre-trade execution gate for agentic trading systems. It fetches st
 
 Abstain never places orders and never holds funds. Its job is narrower: decide whether a proposed action is allowed, explain the decision, and leave evidence that can be independently checked.
 
+## The problem it solves
+
+Trading agents can turn a strategy signal into an order in milliseconds, but the evidence behind that order is often fragmented across market-data calls, strategy metrics, logs, and process memory. That creates four practical pain points:
+
+- **A decision is hard to explain.** Operators see an order or refusal without one durable record of the evidence, thresholds, and policy that produced it.
+- **Missing data can fail open.** A timeout, malformed payload, or stale signal can be mistaken for a harmless default and accidentally authorize a trade.
+- **Retries can duplicate execution.** Two agents or serverless instances can act on the same signal unless replay protection and the final write are atomic.
+- **Audit trails can look durable when they are not.** An in-memory log resets on a cold start and diverges across instances while every individual request still appears successful.
+
+Abstain turns those failure modes into an explicit API contract: trustworthy evidence produces a deterministic decision; uncertainty produces `ABSTAIN`; no proposed trade produces `NO_TRADE`; and no verdict is returned until its receipt is durably appended.
+
+## Why Nexus is essential
+
+OlaXBT Nexus is the source of the strategy proposal and the evidence needed to evaluate it: live signals, qualification metrics, equity history, trades, funding, open interest, and historical coverage. Remove Nexus and Abstain has neither a proposal to gate nor a strategy record to verify. Abstain is therefore an application built around Nexus, not a thin proxy: it validates Nexus evidence, applies ten independent execution checks, prevents duplicate authorization, and creates a public proof artifact Nexus does not provide on its own.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Agent proposes trade] --> B[Abstain API]
+    B --> C[OlaXBT Nexus MCP]
+    C --> D[Validate signal, metrics, market and strategy evidence]
+    D --> E[Run deterministic policy checks]
+    E --> F{Verdict}
+    F -->|EXECUTE| G[Seal receipt]
+    F -->|ABSTAIN| G
+    F -->|NO_TRADE| G
+    G --> H[Atomic Redis compare-and-append]
+    H --> I[Return verdict, checks and receipt hash]
+    I --> J[Public chain verification]
+```
+
+The API separates liveness from readiness. `/health` identifies the exact deployed source without depending on external services. `/v1/ready` proves that Nexus and the durable receipt store are usable. The complete component and request flow is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## What makes the proof credible
+
+- All ten checks are deterministic and versioned by `policy_hash`; no LLM sits in the authorization path.
+- Nexus responses cross a strict trust boundary before any threshold comparison.
+- The server derives signal identity, so callers cannot rename a repeated signal.
+- Redis Lua compare-and-append binds the decision to the exact chain snapshot it evaluated.
+- Receipts are publicly readable and independently recomputable from genesis.
+- Production refuses to evaluate when storage is ephemeral or unavailable.
+
 ## Quick start
 
 ```bash
@@ -35,6 +78,8 @@ Replay mode is the default. It uses committed Nexus fixtures and an in-memory re
 - [How to test and deploy Abstain](docs/how-to-test-and-deploy.md) — run offline gates, configure production, and verify a deployment.
 - [HTTP API and configuration reference](docs/reference-api.md) — endpoints, request shapes, environment variables, limits, and errors.
 - [Why Abstain uses a fail-closed receipt chain](docs/explanation-receipt-chain.md) — design rationale, concurrency model, and trade-offs.
+- [Architecture](ARCHITECTURE.md) — components, data flow, trust boundaries, and deployment topology.
+- [Demo video script](docs/demo-video-script.md) — a timed recording plan for judges.
 - [Submission verification evidence](submission/verification/README.md) — reviewer-focused reproduction steps.
 - [Fixture provenance](fixtures/README.md) — which evidence is recorded or synthetic.
 
