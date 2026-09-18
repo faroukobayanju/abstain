@@ -25,13 +25,15 @@ export function signalStale(input: GateInput, policy: Policy): CheckResult {
   }
 
   const ageS = (input.now - secondsToMs(signal.value.timestamp)) / 1000;
+  const invalidFuture = ageS < 0;
   return {
     id: 'SIGNAL_STALE',
-    verdict: ageS > policy.max_signal_age_s ? 'FAIL' : 'PASS',
+    verdict: invalidFuture || ageS > policy.max_signal_age_s ? 'FAIL' : 'PASS',
     observed: Number(ageS.toFixed(1)),
     threshold: policy.max_signal_age_s,
     unit: 's',
     source: { call: 'get_strategy_signal', outcome: 'ok' },
+    ...(invalidFuture ? { reason: 'signal timestamp is in the future' } : {}),
   };
 }
 

@@ -36,7 +36,7 @@ curl --fail --silent --show-error https://x-agent-six.vercel.app/.well-known/xag
 {"schemaVersion":1,"slug":"faroukobayanju-abstain","commit":"REPLACE_WITH_40_CHAR_SHA","commit_reviewable":true}
 ```
 
-## 3. Capability call — a refusal with its reason
+## 3. Capability call — a verifiable no-trade decision
 
 ```bash
 curl --fail --silent --show-error \
@@ -46,31 +46,24 @@ curl --fail --silent --show-error \
   --data '{"symbol":"BTC/USDT","side":"BUY","notional":15000,"policy":"strict"}'
 ```
 
-Success response (abridged — all ten checks are present in the real body):
+Current success response (abridged):
 
 ```json
 {
-  "verdict": "ABSTAIN",
+  "verdict": "NO_TRADE",
   "policy": "strict",
   "policy_hash": "sha256:e3e38d19376f77ee9...",
   "as_of": "2026-09-17",
-  "reason": "NOT_QUALIFIED",
-  "checks": [
-    {"id":"NOT_QUALIFIED","verdict":"FAIL","observed":"NOT_QUALIFIED",
-     "threshold":"QUALIFIED_FOR_OKX_LISTING","unit":null,
-     "source":{"call":"get_strategy_metrics","outcome":"ok"},
-     "detail":{"sharpe_ratio":{"observed":0.2989,"gate":"> 2.0","pass":false},
-               "trading_period_days":{"observed":90,"gate":"> 30","pass":true},
-               "estimated_aum_usdt":{"observed":100000,"gate":"> 10000","pass":true}}}
-  ],
+  "reason": "strategy signal is HOLD; no trade proposed, so no gating required",
+  "checks": [],
   "receipt": {"seq":1,"hash":"sha256:...","prev_hash":"sha256:0000..."}
 }
 ```
 
-The live strategy currently emits `trade_intent: HOLD`, which correctly returns
-`"verdict":"NO_TRADE"` with an empty `checks` array and a stated reason — nothing was
-proposed, so nothing was authorized or refused. A receipt is still written, so the
-chain has no gaps.
+The live strategy currently emits `trade_intent: HOLD`, so nothing was proposed,
+authorized, or refused. A receipt is still written, so the chain has no gaps. When the
+signal is BUY or SELL, the response contains all ten checks; the deterministic offline
+suite exercises those non-HOLD paths without depending on the live signal's timing.
 
 ## 4. The closer — recompute the chain yourself
 
@@ -108,7 +101,7 @@ keys recursively and preserves array order (`source/src/receipt/schema.ts`).
 cd source && npm ci && npm test
 ```
 
-Expected: **156 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
+Expected: **161 tests passing across 5 files.** `NEXUS_MODE` defaults to `replay`, so
 the suite serves the recorded cassettes in `fixtures/` instead of calling Nexus.
 
 The tests that carry the most weight:

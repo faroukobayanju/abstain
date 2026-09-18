@@ -24,7 +24,7 @@ git diff --check
 
 Expected result:
 
-- 156 tests pass across five files.
+- 161 tests pass across five files.
 - TypeScript emits no errors.
 - The production build completes.
 - The live-verification script has valid shell syntax.

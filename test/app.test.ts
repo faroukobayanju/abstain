@@ -366,6 +366,16 @@ describe('store durability is loud, never silent', () => {
     expect(await res.json()).toEqual({ error: 'payload_too_large', max_bytes: 16384 });
   });
 
+  it('rejects an oversized body even when Content-Length is absent', async () => {
+    const res = await app().request('/v1/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-ABSTAIN-KEY': KEY },
+      body: JSON.stringify({ ...VALID, padding: 'x'.repeat(16_384) }),
+    });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'payload_too_large', max_bytes: 16384 });
+  });
+
   it('enforces the global limiter after the client limiter allows the request', async () => {
     const backing = new MemoryStore();
     const store: ReceiptStore = {

@@ -58,15 +58,17 @@ Nexus's, so Abstain refuses and records evidence before Nexus silently halts.
 | 9 | `SIZE_BOUND` | notional outside `[min_notional, max_notional]` | request |
 | 10 | `DUPLICATE` | `signal_id` already committed to the chain | receipt chain |
 
-All ten run on every evaluation. A receipt that stops at the first failure hides the
-limits, and the limits are the evidence.
+For a BUY or SELL proposal, all ten run on every evaluation. A HOLD signal returns
+`NO_TRADE` before gating because there is no proposed execution; that outcome is still
+written to the receipt chain. A receipt that stops at the first failed check would hide
+the remaining limits, so non-HOLD evaluations always record all ten.
 
 ## Source and reproducibility
 
 - **Source repository:** `https://github.com/faroukobayanju/abstain`
 - **Review commit:** `REPLACE_WITH_40_CHAR_SHA`
 - **Source submitted in this PR:** `source/`
-- **Run tests:** `npm ci && npm test` — 156 tests, no API key and no network required
+- **Run tests:** `npm ci && npm test` — 161 tests, no API key and no network required
 - **Run locally:** `npm run build && COMMIT_SHA=$(git rev-parse HEAD) ABSTAIN_WRITE_KEY=demo-key npm start`
 - **Deploy:** Vercel git integration; `vercel.json` rewrites all paths to `api/index.ts`. Set `ABSTAIN_WRITE_KEY`, `NEXUS_API_KEY` + `NEXUS_MODE=live`, and either `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` or Vercel's `KV_REST_API_URL` + `KV_REST_API_TOKEN`. Production evaluations refuse to run without durable storage.
 - **Version binding:** `/health` reports `VERCEL_GIT_COMMIT_SHA` in the body and in the `x-source-commit` response header. It has **zero external dependencies** by design: coupling a hard gate to Nexus or Redis uptime would let a third party fail a gate already passed.

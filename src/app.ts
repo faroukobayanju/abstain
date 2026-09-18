@@ -172,8 +172,15 @@ export function createApp(deps: AppDeps) {
 
     let req;
     try {
-      req = validate(await c.req.json().catch(() => null));
+      const rawBody = await c.req.text();
+      if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+        return c.json({ error: 'payload_too_large', max_bytes: MAX_REQUEST_BYTES }, 413);
+      }
+      req = validate(JSON.parse(rawBody));
     } catch (err) {
+      if (err instanceof SyntaxError) {
+        return c.json({ error: 'bad_request', field: 'body', reason: 'body must be valid JSON' }, 400);
+      }
       if (err instanceof ValidationError) {
         return c.json({ error: 'bad_request', field: err.field, reason: err.message }, 400);
       }

@@ -23,6 +23,12 @@ function finite(obj: Obj, key: string, tool: string): number {
   return value;
 }
 
+function positive(obj: Obj, key: string, tool: string): number {
+  const value = finite(obj, key, tool);
+  if (value <= 0) throw new NexusParseError(`${tool}.${key} must be positive`, tool);
+  return value;
+}
+
 function optionalFinite(obj: Obj, key: string, tool: string): void {
   if (obj[key] !== undefined) finite(obj, key, tool);
 }
@@ -53,7 +59,7 @@ export function validateToolPayload<T>(
       string(obj, 'symbol', tool);
       matchesArgument(obj, 'symbol', 'symbol', args, tool);
       string(obj, 'reasoning_log', tool);
-      finite(obj, 'timestamp', tool);
+      positive(obj, 'timestamp', tool);
       optionalFinite(obj, 'confidence', tool);
       const intent = string(obj, 'trade_intent', tool);
       if (!['BUY', 'SELL', 'HOLD'].includes(intent)) {
@@ -88,7 +94,7 @@ export function validateToolPayload<T>(
       for (const [index, point] of points.entries()) {
         const p = object(point, tool, `points[${index}]`);
         finite(p, 't', tool);
-        finite(p, 'equity', tool);
+        positive(p, 'equity', tool);
       }
       break;
     case 'get_strategy_trades':
@@ -101,6 +107,9 @@ export function validateToolPayload<T>(
           'direction', 'entry_price', 'exit_price', 'size', 'leverage', 'pnl', 'pnl_pct',
           'holding_bars', 'commission', 'entry_bar_index', 'exit_bar_index', 'entry_ts_ms', 'exit_ts_ms',
         ]) finite(t, key, tool);
+        if (t['direction'] !== 1 && t['direction'] !== -1) {
+          throw new NexusParseError(`${tool}.direction must be 1 or -1`, tool);
+        }
       }
       break;
     case 'get_historical_funding':

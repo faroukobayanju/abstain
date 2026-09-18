@@ -20,7 +20,7 @@ npm run typecheck
 npm run build
 ```
 
-The test command should report 156 passing tests across five files. The final two commands should exit without errors.
+The test command should report 161 passing tests across five files. The final two commands should exit without errors.
 
 ## Step 2: Start the replay server
 
