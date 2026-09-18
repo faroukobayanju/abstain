@@ -64,7 +64,7 @@ verification/README.md.
     [ ] no nxk_ anywhere:  git -C <fork> grep -rn "nxk_" || echo clean
     [ ] no .env committed
     [ ] the sha in /health, /.well-known, and submission.json are identical
-    [ ] npm ci && npm test passes from a clean clone of source/  (127 tests)
+    [ ] npm ci && npm test passes from a clean clone of source/  (147 tests)
     [ ] SUBMISSION.md framing is pre-trade execution control — NOT risk
         scoring, NOT compliance, NOT security analysis (excluded categories)
 
