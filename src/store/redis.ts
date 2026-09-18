@@ -33,6 +33,15 @@ redis.call('SET', KEYS[1], ARGV[2])
 return 1
 `.trim();
 
+export const RATE_LIMIT_LUA = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+if count > tonumber(ARGV[2]) then return 0 end
+return 1
+`.trim();
+
 /** Minimal surface of the Upstash/ioredis client we depend on. */
 export interface RedisLike {
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
@@ -88,6 +97,20 @@ export class RedisStore implements ReceiptStore {
     try {
       const raw = await this.redis.lrange(this.listKey, 0, -1);
       return raw.map((r) => JSON.parse(r) as Receipt).sort((a, b) => a.seq - b.seq);
+    } catch (err) {
+      throw new StoreUnavailableError(String(err));
+    }
+  }
+
+  async allowWrite(scope: string, limit: number, windowMs: number): Promise<boolean> {
+    try {
+      const bucket = Math.floor(Date.now() / windowMs);
+      const result = await this.redis.eval(
+        RATE_LIMIT_LUA,
+        [`${this.prefix}:rate:${scope}:${bucket}`],
+        [String(windowMs), String(limit)],
+      );
+      return Number(result) === 1;
     } catch (err) {
       throw new StoreUnavailableError(String(err));
     }

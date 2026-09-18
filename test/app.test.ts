@@ -56,6 +56,7 @@ describe('hard gate: GET /health', () => {
       compareAndAppend: async () => { throw new StoreUnavailableError('down'); },
       get: async () => { throw new StoreUnavailableError('down'); },
       all: async () => { throw new StoreUnavailableError('down'); },
+      allowWrite: async () => { throw new StoreUnavailableError('down'); },
     };
     const res = await app(broken, { VERCEL_GIT_COMMIT_SHA: COMMIT } as NodeJS.ProcessEnv).request('/health');
     expect(res.status).toBe(200);
@@ -134,6 +135,7 @@ describe('input validation', () => {
     ['negative notional', { symbol: 'BTC/USDT', side: 'BUY', notional: -5 }, 'notional'],
     ['notional as a string', { symbol: 'BTC/USDT', side: 'BUY', notional: '100' }, 'notional'],
     ['unknown policy', { ...VALID, policy: 'loose' }, 'policy'],
+    ['caller-supplied signal identity', { ...VALID, signalId: 'bypass' }, 'signalId'],
   ];
   for (const [name, body, field] of cases) {
     it(`rejects ${name} and names the field`, async () => {
@@ -183,7 +185,7 @@ describe('POST /v1/evaluate — the three demo acts', () => {
     const store = new MemoryStore();
     const a = app(store);
     for (let i = 0; i < 5; i++) {
-      await post(a, '/v1/evaluate', { ...VALID, signalId: `sig_${i}` }, { 'X-ABSTAIN-KEY': KEY });
+      await post(a, '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY });
     }
     expect(await store.all()).toHaveLength(5);
     expect((await (await post(a, '/v1/verify')).json()).ok).toBe(true);
@@ -195,6 +197,7 @@ describe('POST /v1/evaluate — the three demo acts', () => {
       compareAndAppend: async () => { throw new StoreUnavailableError('ECONNREFUSED'); },
       get: async () => null,
       all: async () => [],
+      allowWrite: async () => { throw new StoreUnavailableError('ECONNREFUSED'); },
     };
     const res = await post(app(broken), '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY });
     expect(res.status).toBe(503);
@@ -209,7 +212,7 @@ describe('public reads', () => {
     const store = new MemoryStore();
     const a = app(store);
     for (let i = 0; i < 4; i++) {
-      await post(a, '/v1/evaluate', { ...VALID, signalId: `s${i}` }, { 'X-ABSTAIN-KEY': KEY });
+      await post(a, '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY });
     }
     const body = await (await a.request('/v1/receipts?from=2&to=3')).json();
     expect(body.count).toBe(2);
@@ -271,6 +274,14 @@ describe('store durability is loud, never silent', () => {
     expect(resolveRedisCredentials({ KV_REST_API_URL: 'u' } as NodeJS.ProcessEnv)).toBeNull();
   });
 
+  it('never combines a URL and token from different integration namespaces', async () => {
+    const { resolveRedisCredentials } = await import('../src/deps.js');
+    expect(resolveRedisCredentials({
+      UPSTASH_REDIS_REST_URL: 'direct-url',
+      KV_REST_API_TOKEN: 'marketplace-token',
+    } as NodeJS.ProcessEnv)).toBeNull();
+  });
+
   it('/v1/ready is NOT ready when receipts are ephemeral', async () => {
     const a = createApp({
       client: new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' }),
@@ -285,5 +296,46 @@ describe('store durability is loud, never silent', () => {
     const res = await a.request('/v1/ready');
     expect(res.status).toBe(503);
     expect((await res.json()).warning).toContain('cold start');
+  });
+
+  it('refuses production evaluations when receipts are ephemeral', async () => {
+    const store = new MemoryStore();
+    const a = createApp({
+      client: new NexusClient({ mode: 'replay', fixtureDir: 'fixtures' }),
+      store,
+      cache: new TtlCache(60_000),
+      basePolicy: BASE_POLICY,
+      accountEquity: 100_000,
+      env: { ...ENV, VERCEL_ENV: 'production' },
+      durable: false,
+    });
+    const res = await post(a, '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY });
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe('store_not_durable');
+    expect(await store.all()).toHaveLength(0);
+  });
+
+  it('bounds authenticated writes per client before they can grow the chain too quickly', async () => {
+    const a = app();
+    for (let i = 0; i < 20; i++) {
+      expect((await post(a, '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY })).status).toBe(200);
+    }
+    const limited = await post(a, '/v1/evaluate', VALID, { 'X-ABSTAIN-KEY': KEY });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get('retry-after')).toBe('60');
+  });
+
+  it('does not let malformed requests exhaust the valid-write allowance', async () => {
+    const a = app();
+    for (let i = 0; i < 25; i++) {
+      expect((await post(a, '/v1/evaluate', { symbol: 'BTC' }, {
+        'X-ABSTAIN-KEY': KEY,
+        'X-Forwarded-For': '198.51.100.7',
+      })).status).toBe(400);
+    }
+    expect((await post(a, '/v1/evaluate', VALID, {
+      'X-ABSTAIN-KEY': KEY,
+      'X-Forwarded-For': '198.51.100.7',
+    })).status).toBe(200);
   });
 });

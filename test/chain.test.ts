@@ -3,7 +3,7 @@ import { MemoryStore } from '../src/store/memory.js';
 import { ChainContentionError, appendReceipt } from '../src/store/types.js';
 import { GENESIS, canonical, sealReceipt, type ReceiptBody } from '../src/receipt/schema.js';
 import { verifyChain } from '../src/receipt/verify.js';
-import { RedisStore, CAS_APPEND_LUA, type RedisLike } from '../src/store/redis.js';
+import { RedisStore, CAS_APPEND_LUA, RATE_LIMIT_LUA, type RedisLike } from '../src/store/redis.js';
 import { StoreUnavailableError } from '../src/store/types.js';
 
 const body = (n: number): ReceiptBody => ({
@@ -89,9 +89,60 @@ describe('concurrency — the fork this design exists to prevent', () => {
       compareAndAppend: async () => false,
       get: (s: number) => alwaysContended.get(s),
       all: () => alwaysContended.all(),
+      allowWrite: async () => true,
     };
     await expect(appendReceipt(hostile, body(1), 3)).rejects.toThrow(ChainContentionError);
     expect(await alwaysContended.all()).toHaveLength(0);
+  });
+
+  it('re-checks duplicate state after CAS contention before authorizing', async () => {
+    let releaseFirst: (() => void) | undefined;
+    let suspended = false;
+    const store = new MemoryStore(async () => {
+      if (suspended) return;
+      suspended = true;
+      await new Promise<void>((resolve) => { releaseFirst = resolve; });
+    });
+    const sameSignal: ReceiptBody = {
+      ...body(1),
+      signal_id: 'same',
+      verdict: 'EXECUTE',
+      checks: [{
+        id: 'DUPLICATE', verdict: 'PASS', observed: 'same', threshold: 'unseen', unit: null, source: null,
+      }],
+    };
+
+    const first = appendReceipt(store, sameSignal);
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = appendReceipt(store, sameSignal);
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseFirst?.();
+
+    const receipts = await Promise.all([first, second]);
+    expect(receipts.map((receipt) => receipt.verdict).sort()).toEqual(['ABSTAIN', 'EXECUTE']);
+    expect(receipts.map((receipt) => receipt.checks[0]?.verdict).sort()).toEqual(['FAIL', 'PASS']);
+    expect(verifyChain(await store.all()).ok).toBe(true);
+  });
+
+  it('binds a stale decision snapshot to its old head before committing', async () => {
+    const store = new MemoryStore();
+    const staleSnapshot = await store.all();
+    const sameSignal: ReceiptBody = {
+      ...body(1),
+      signal_id: 'same',
+      verdict: 'EXECUTE',
+      checks: [{
+        id: 'DUPLICATE', verdict: 'PASS', observed: 'same', threshold: 'unseen', unit: null, source: null,
+      }],
+    };
+
+    const first = await appendReceipt(store, sameSignal);
+    const second = await appendReceipt(store, sameSignal, undefined, staleSnapshot);
+
+    expect(first.verdict).toBe('EXECUTE');
+    expect(second.verdict).toBe('ABSTAIN');
+    expect(second.checks[0]?.verdict).toBe('FAIL');
+    expect(verifyChain(await store.all()).ok).toBe(true);
   });
 });
 
@@ -160,7 +211,12 @@ describe('RedisStore', () => {
     const state = {
       head: null as string | null,
       list: [] as string[],
-      async eval(_script: string, _keys: string[], args: string[]) {
+      rateCount: 0,
+      async eval(script: string, _keys: string[], args: string[]) {
+        if (script === RATE_LIMIT_LUA) {
+          state.rateCount++;
+          return state.rateCount <= Number(args[1]) ? 1 : 0;
+        }
         const [expected, nextHead, receipt] = args as [string, string, string];
         const current = state.head ?? '';
         if (current !== expected) return 0;
@@ -208,6 +264,12 @@ describe('RedisStore', () => {
     };
     const store = new RedisStore(broken);
     await expect(store.head()).rejects.toThrow(StoreUnavailableError);
+  });
+
+  it('enforces the write limit through Redis rather than per serverless instance', async () => {
+    const store = new RedisStore(fakeRedis());
+    for (let i = 0; i < 20; i++) expect(await store.allowWrite('evaluate', 20, 60_000)).toBe(true);
+    expect(await store.allowWrite('evaluate', 20, 60_000)).toBe(false);
   });
 
   it('ships a Lua script that reads the head before writing', () => {

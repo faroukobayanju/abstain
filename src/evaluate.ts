@@ -20,8 +20,6 @@ export interface EvaluateRequest {
   symbol: string;
   side: 'BUY' | 'SELL';
   notional: number;
-  /** Optional. When omitted it is derived from the signal, so polling an unchanged signal is detectable. */
-  signalId?: string;
   policy?: PolicyName;
 }
 
@@ -42,14 +40,15 @@ export class ValidationError extends Error {
 }
 
 const SIDES = new Set(['BUY', 'SELL']);
+const SYMBOL = /^[A-Z0-9]{1,20}\/[A-Z0-9]{1,20}$/;
 
 export function validate(raw: unknown): EvaluateRequest {
   if (raw === null || typeof raw !== 'object') throw new ValidationError('body', 'body must be a JSON object');
   const b = raw as Record<string, unknown>;
 
   const symbol = b['symbol'];
-  if (typeof symbol !== 'string' || !symbol.includes('/')) {
-    throw new ValidationError('symbol', 'symbol is required, e.g. "BTC/USDT"');
+  if (typeof symbol !== 'string' || !SYMBOL.test(symbol)) {
+    throw new ValidationError('symbol', 'symbol must be an uppercase pair such as "BTC/USDT"');
   }
   const side = b['side'];
   if (typeof side !== 'string' || !SIDES.has(side)) {
@@ -63,16 +62,14 @@ export function validate(raw: unknown): EvaluateRequest {
   if (policy !== undefined && policy !== 'strict' && policy !== 'permissive') {
     throw new ValidationError('policy', 'policy must be "strict" or "permissive"');
   }
-  const signalId = b['signalId'];
-  if (signalId !== undefined && typeof signalId !== 'string') {
-    throw new ValidationError('signalId', 'signalId must be a string when supplied');
+  if (b['signalId'] !== undefined) {
+    throw new ValidationError('signalId', 'signalId is derived from the Nexus signal and cannot be supplied by callers');
   }
 
   return {
     symbol,
     side: side as 'BUY' | 'SELL',
     notional,
-    ...(typeof signalId === 'string' ? { signalId } : {}),
     ...(policy ? { policy: policy as PolicyName } : {}),
   };
 }
@@ -108,7 +105,7 @@ export async function evaluate(req: EvaluateRequest, deps: EvaluateDeps): Promis
     symbol: req.symbol,
     side: req.side,
     notional: req.notional,
-    signalId: req.signalId ?? derivedId,
+    signalId: derivedId,
   };
 
   const priorReceipts = await deps.store.all();
@@ -136,5 +133,5 @@ export async function evaluate(req: EvaluateRequest, deps: EvaluateDeps): Promis
     ...(outcome.reason ? { reason: outcome.reason } : {}),
   };
 
-  return { receipt: await appendReceipt(deps.store, body), policyName };
+  return { receipt: await appendReceipt(deps.store, body, undefined, priorReceipts), policyName };
 }
