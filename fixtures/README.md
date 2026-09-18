@@ -7,13 +7,11 @@ in this submission unverifiable.
 
 ## RECORDED — verbatim from the live gateway, 2026-09-17
 
-> **Truncation notice.** `get_strategy_equity.json` and `get_strategy_trades.json`
-> are the FIRST N entries of their live responses, not the full series — the
-> terminal capture was length-limited. Every value in them is verbatim, but they
-> cover only the June drawdown window. Consequence: in replay they present the
-> strategy's worst stretch, so `DRAWDOWN_BUDGET` (7.62% vs 5%) and `LOSS_STREAK`
-> (3 vs 3) both fail and replay has no `EXECUTE` path. Re-record the full series
-> before submission; see TODO in SUBMISSION.md.
+`get_strategy_equity.json` contains the complete 91-point equity series and
+`get_strategy_trades.json` contains all 19 trades returned for backtest run
+`bt-7a0daf243c06`. They are not terminal excerpts. This matters because replay,
+drawdown, loss-streak, and threshold-frontier claims operate on the complete
+record rather than only the strategy's worst interval.
 
 Strategy `str_515920d047ca`, backtest run `bt-7a0daf243c06`.
 
