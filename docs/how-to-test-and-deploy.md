@@ -120,7 +120,10 @@ The live Nexus signal was `HOLD`, so there was no non-HOLD proposal on which to 
 
 ### Nexus data fails validation
 
-Abstain rejects malformed numeric fields, mismatched symbols or dates, missing prior open interest, and empty equity series. Inspect the named `NexusParseError` path rather than weakening validation.
+Abstain rejects malformed numeric fields, mismatched symbols or dates, nonpositive signal
+timestamps, missing prior open interest, nonpositive or nonchronological equity, and invalid
+trade directions. It also fails `SIGNAL_STALE` when a signal is dated in the future. Inspect
+the named `NexusParseError` path for malformed payloads rather than weakening validation.
 
 ## Related
 

@@ -36,7 +36,7 @@ The receipt is committed before the API responds. If Redis is unavailable or con
 
 ## Fail-closed evidence
 
-Each Nexus payload crosses a validation boundary before it reaches the gate. Abstain checks required object shapes, finite numeric values, allowed enum values, requested symbol and date, prior open interest, and a non-empty equity curve.
+Each Nexus payload crosses a validation boundary before it reaches the gate. Abstain checks required object shapes, finite numeric values, allowed enum values, requested symbol and date, prior open interest, positive equity, strictly increasing equity timestamps, and a non-empty equity curve. The gate also rejects a signal timestamp that lies in the future.
 
 Unavailable data remains distinguishable:
 

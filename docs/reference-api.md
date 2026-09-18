@@ -125,7 +125,8 @@ Request body:
 
 Callers cannot supply `signalId`. Abstain derives it from the requested symbol and Nexus signal timestamp.
 
-The maximum declared request size is 16,384 bytes.
+The request body is limited to 16,384 UTF-8 bytes. Abstain rejects both an oversized
+declared `Content-Length` and an oversized body when that header is absent or inaccurate.
 
 Response:
 
@@ -151,7 +152,7 @@ Response:
 
 | Check | Purpose |
 | --- | --- |
-| `SIGNAL_STALE` | Refuse signals older than the configured maximum age. |
+| `SIGNAL_STALE` | Refuse signals older than the configured maximum age or dated in the future. |
 | `NOT_QUALIFIED` | Enforce the Nexus listing qualification in strict policy. |
 | `FUNDING_REGIME` | Refuse an adverse funding regime. |
 | `OI_SHOCK` | Refuse a large open-interest move against the prior snapshot. |
@@ -212,7 +213,7 @@ Rate-limited responses use HTTP 429 and `Retry-After: 60`. Invalid request bodie
 | 401 | `unauthorized` | Write key missing, wrong, or not configured. |
 | 404 | `not_found` | Receipt or route does not exist. |
 | 409 | Verification result | Receipt-chain divergence. |
-| 413 | `payload_too_large` | Declared content length exceeds 16,384 bytes. |
+| 413 | `payload_too_large` | Declared content length or actual request body exceeds 16,384 bytes. |
 | 429 | `rate_limited` | Per-client or global write limit reached. |
 | 503 | `store_not_durable` | Production has no durable Redis configuration. |
 | 503 | `store_unavailable` | Receipt store operation failed; no receipt was written. |
